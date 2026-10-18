@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-10-18 17:32:04",
+  "hardware": {
+    "gpu_device": "NVIDIA GeForce GTX 1660 Ti",
+    "cuda_available": true,
+    "peak_vram_mb": 0.0,
+    "allocated_vram_mb": 0.0,
+    "vram_limit_target_mb": 4096.0,
+    "vram_status": "PASS (< 4.0 GB)"
+  },
+  "performance": {
+    "total_steps": 6,
+    "average_latency_ms": 1072.63,
+    "max_latency_ms": 1794.96,
+    "latency_target_ms": 1000.0,
+    "latency_status": "EXCEEDED"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "name": "Upload Outfit & OWL-ViT Detect",
+      "action": "Upload outfit image -> Detect garments with bounding boxes",
+      "latency_ms": 9.82,
+      "gpu_allocated_mb": 0.0,
+      "details": "Detected 3 boxes. Selected box: Shoes"
+    },
+    {
+      "step": 2,
+      "name": "Initial Visual Search",
+      "action": "User selects Shoes crop + \"Tìm đôi giống thế này\"",
+      "latency_ms": 1410.74,
+      "gpu_allocated_mb": 0.0,
+      "details": "Returned 50 visual match items. Top-1: Debbie"
+    },
+    {
+      "step": 3,
+      "name": "Conversational Refinement (Hard Filters)",
+      "action": "User refines: \"Màu trắng, dưới 1 triệu\"",
+      "latency_ms": 1554.83,
+      "gpu_allocated_mb": 0.0,
+      "details": "Active chips: 3. Max price: 1000000đ. Matches: 50"
+    },
+    {
+      "step": 4,
+      "name": "Negative Constraint & Reference Query",
+      "action": "User speaks: \"Giống số 1 nhưng thể thao hơn, không phải da\"",
+      "latency_ms": 1794.96,
+      "gpu_allocated_mb": 0.0,
+      "details": "Negative constraint [exclude_materials: da]. Penalty (-0.30) applied to leather products. Matches: 50"
+    },
+    {
+      "step": 5,
+      "name": "Interactive Constraint Removal",
+      "action": "User clicks [✕] on chip 'exclude_material:leather' -> Instant re-rank",
+      "latency_ms": 70.55,
+      "gpu_allocated_mb": 0.0,
+      "details": "Chip removed. Candidate list re-ranked dynamically with 50 products."
+    },
+    {
+      "step": 6,
+      "name": "Voice-to-Search Full Flow",
+      "action": "Audio recorded -> Whisper transcribe -> Unified search ('tìm đôi giày sneaker màu trắng không phải da dưới 1 triệu')",
+      "latency_ms": 1594.89,
+      "gpu_allocated_mb": 0.0,
+      "details": "Transcript text received: 'tìm đôi giày sneaker màu trắng không phải da dưới 1 triệu'. Total matches: 6"
+    }
+  ]
+}

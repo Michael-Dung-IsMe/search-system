@@ -1,0 +1,942 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Interactive Multimodal Shopping Search Engine API",
+    "description": "Backend API for Object-aware Multimodal Search, Conversational Refinements, and Explainable Reranking.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health Check",
+        "description": "System liveness check.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/detect": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Detect Objects",
+        "description": "Detects garments in an uploaded outfit image using OWL-ViT.",
+        "operationId": "detect_objects_api_detect_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_detect_objects_api_detect_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transcribe": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Transcribe Audio",
+        "description": "Transcribes an audio blob query into Vietnamese text using Whisper.",
+        "operationId": "transcribe_audio_api_transcribe_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_transcribe_audio_api_transcribe_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search Products",
+        "description": "Unified Multimodal Conversational Search endpoint.",
+        "operationId": "search_products_api_search_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_search_products_api_search_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/{session_id}/constraint": {
+      "delete": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Delete Constraint",
+        "description": "Removes an active constraint chip and re-evaluates ranking immediately.",
+        "operationId": "delete_constraint_api_search__session_id__constraint_delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "chip_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The chip_id to remove, e.g. 'color:Black'",
+              "title": "Chip Id"
+            },
+            "description": "The chip_id to remove, e.g. 'color:Black'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products/{product_id}": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Get Product Detail",
+        "description": "Fetches complete product detail by article_id.",
+        "operationId": "get_product_detail_api_products__product_id__get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_detect_objects_api_detect_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_detect_objects_api_detect_post"
+      },
+      "Body_search_products_api_search_post": {
+        "properties": {
+          "query_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Text"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "reference_article_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Article Id"
+          },
+          "crop_box": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crop Box"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "query_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Type"
+          }
+        },
+        "type": "object",
+        "title": "Body_search_products_api_search_post"
+      },
+      "Body_transcribe_audio_api_transcribe_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_transcribe_audio_api_transcribe_post"
+      },
+      "ConstraintChip": {
+        "properties": {
+          "chip_id": {
+            "type": "string",
+            "title": "Chip Id",
+            "description": "Unique identifier for the chip, e.g. 'color:10' or 'price:1000000'"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Human-readable label, e.g. 'Màu: Trắng' or 'Tối đa: 1.000.000đ'"
+          },
+          "chip_type": {
+            "type": "string",
+            "enum": [
+              "category",
+              "gender",
+              "color",
+              "price",
+              "material",
+              "exclude_color",
+              "exclude_material",
+              "reference"
+            ],
+            "title": "Chip Type"
+          },
+          "value": {
+            "title": "Value",
+            "description": "Underlying value represented by the chip"
+          },
+          "is_removable": {
+            "type": "boolean",
+            "title": "Is Removable",
+            "description": "Whether the user can click [x] to remove this chip",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "chip_id",
+          "label",
+          "chip_type",
+          "value"
+        ],
+        "title": "ConstraintChip",
+        "description": "Represents an active interactive filter chip shown in the UI."
+      },
+      "DetectResponse": {
+        "properties": {
+          "image_hash": {
+            "type": "string",
+            "title": "Image Hash"
+          },
+          "total_boxes": {
+            "type": "integer",
+            "title": "Total Boxes"
+          },
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/DetectedBox"
+            },
+            "type": "array",
+            "title": "Boxes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_hash",
+          "total_boxes",
+          "boxes"
+        ],
+        "title": "DetectResponse",
+        "description": "Response returned by /api/detect."
+      },
+      "DetectedBox": {
+        "properties": {
+          "box_id": {
+            "type": "string",
+            "title": "Box Id",
+            "description": "Unique box ID"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Canonical garment label (e.g., Top, Pants, Shoes, Bag, Dress)"
+          },
+          "score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "description": "Detection confidence score"
+          },
+          "box_2d": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Box 2D",
+            "description": "[ymin, xmin, ymax, xmax] normalized to [0.0, 1.0]"
+          },
+          "polygon": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polygon",
+            "description": "Normalized [x, y] polygon vertices tracing garment contour for SVG glow highlighting"
+          }
+        },
+        "type": "object",
+        "required": [
+          "box_id",
+          "label",
+          "score",
+          "box_2d"
+        ],
+        "title": "DetectedBox",
+        "description": "Normalized bounding box detected by OWL-ViT."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ProductDetailResponse": {
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "title": "Article Id"
+          },
+          "product_code": {
+            "type": "string",
+            "title": "Product Code"
+          },
+          "prod_name": {
+            "type": "string",
+            "title": "Prod Name"
+          },
+          "price_vnd": {
+            "type": "integer",
+            "title": "Price Vnd"
+          },
+          "gender": {
+            "type": "string",
+            "title": "Gender"
+          },
+          "color_code": {
+            "type": "string",
+            "title": "Color Code"
+          },
+          "color_name": {
+            "type": "string",
+            "title": "Color Name"
+          },
+          "category_group": {
+            "type": "string",
+            "title": "Category Group"
+          },
+          "category_sub": {
+            "type": "string",
+            "title": "Category Sub"
+          },
+          "detail_desc": {
+            "type": "string",
+            "title": "Detail Desc"
+          },
+          "image_path": {
+            "type": "string",
+            "title": "Image Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "article_id",
+          "product_code",
+          "prod_name",
+          "price_vnd",
+          "gender",
+          "color_code",
+          "color_name",
+          "category_group",
+          "category_sub",
+          "detail_desc",
+          "image_path"
+        ],
+        "title": "ProductDetailResponse",
+        "description": "Detailed product information returned by /api/products/{id}."
+      },
+      "SearchResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turn_index": {
+            "type": "integer",
+            "title": "Turn Index"
+          },
+          "total_results": {
+            "type": "integer",
+            "title": "Total Results"
+          },
+          "search_state": {
+            "$ref": "#/components/schemas/SearchState"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms",
+            "default": 0
+          },
+          "query_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Id"
+          },
+          "has_exact_match": {
+            "type": "boolean",
+            "title": "Has Exact Match",
+            "default": true
+          },
+          "exact_items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            },
+            "type": "array",
+            "title": "Exact Items"
+          },
+          "similar_items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            },
+            "type": "array",
+            "title": "Similar Items"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "turn_index",
+          "total_results",
+          "search_state",
+          "items"
+        ],
+        "title": "SearchResponse",
+        "description": "Standardized search response returned to clients."
+      },
+      "SearchResultItem": {
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "title": "Article Id"
+          },
+          "prod_name": {
+            "type": "string",
+            "title": "Prod Name"
+          },
+          "price_vnd": {
+            "type": "integer",
+            "title": "Price Vnd"
+          },
+          "gender": {
+            "type": "string",
+            "title": "Gender"
+          },
+          "color_code": {
+            "type": "string",
+            "title": "Color Code"
+          },
+          "color_name": {
+            "type": "string",
+            "title": "Color Name"
+          },
+          "category_group": {
+            "type": "string",
+            "title": "Category Group"
+          },
+          "category_sub": {
+            "type": "string",
+            "title": "Category Sub"
+          },
+          "image_path": {
+            "type": "string",
+            "title": "Image Path"
+          },
+          "detail_desc": {
+            "type": "string",
+            "title": "Detail Desc"
+          },
+          "visual_similarity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Visual Similarity",
+            "default": 0.0
+          },
+          "final_score": {
+            "type": "number",
+            "title": "Final Score",
+            "default": 0.0
+          },
+          "explanation_badges": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Explanation Badges"
+          },
+          "match_type": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "similar"
+            ],
+            "title": "Match Type",
+            "default": "exact"
+          },
+          "similarity_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "article_id",
+          "prod_name",
+          "price_vnd",
+          "gender",
+          "color_code",
+          "color_name",
+          "category_group",
+          "category_sub",
+          "image_path",
+          "detail_desc"
+        ],
+        "title": "SearchResultItem",
+        "description": "Individual item returned in search candidate list."
+      },
+      "SearchState": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turn_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Turn Index",
+            "default": 0
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "min_price": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Price"
+          },
+          "max_price": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Price"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
+          "exclude_colors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exclude Colors"
+          },
+          "exclude_materials": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exclude Materials"
+          },
+          "reference_article_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Article Id"
+          },
+          "active_chips": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintChip"
+            },
+            "type": "array",
+            "title": "Active Chips"
+          }
+        },
+        "type": "object",
+        "title": "SearchState",
+        "description": "Unified conversational search state maintained across multi-turn interactions."
+      },
+      "TranscribeResponse": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "default": "vi"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "TranscribeResponse",
+        "description": "Response returned by /api/transcribe."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
