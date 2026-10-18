@@ -1,6 +1,6 @@
 # Hệ Thống Tài Liệu Kỹ Thuật (System Documentation)
 ## Interactive Multimodal Shopping Search Engine
-### Đề án: Phân tích & Thiết kế Hệ thống Thông tin (PTTK-HTTT) — Nhóm 6
+### Môn học: Phân tích & Thiết kế Hệ thống Thông tin (PTTK-HTTT) — Nhóm 6
 
 Tài liệu này là **trang chỉ mục gốc (Table of Contents)** dẫn dắt toàn bộ hệ thống tài liệu kỹ thuật chuẩn mực (*Living Documentation*) của dự án. Mọi thông tin trong bộ tài liệu này đều được **đối soát trực tiếp từ mã nguồn thực tế đang hoạt động** (`backend/`, `web/`, `scripts/`, `tests/`).
 
@@ -23,28 +23,28 @@ Bộ tài liệu được tổ chức thành 4 phân khu chuyên biệt:
 
 ```text
 docs/
-├── 01-technical/                                # Kỹ thuật chuyên sâu, thư viện & tối ưu phần cứng
-│   ├── 01-libs/                                 # Chi tiết TỪNG thư viện & model AI (19 files)
-│   │   ├── frontend/                            # 7 Thư viện Web Frontend (Next.js & React)
-│   │   └── backend/                             # 12 Thư viện Backend & AI Engine (Python)
-│   ├── 02-app-architecture.md                   # Kiến trúc ứng dụng end-to-end
-│   ├── 03-multimodal-pipeline.md                # Luồng xử lý dữ liệu 6 bước đa phương thức
-│   ├── 04-conversational-state-lifecycle.md     # Vòng đời SearchState & gỡ chip thời gian thực
-│   ├── 05-hardware-memory-optimization.md       # Phân bổ VRAM & kỹ thuật chống OOM trên GTX 1660 Ti
-│   └── benchmark-results.json                   # Số liệu đo đạc thực nghiệm độ trễ & bộ nhớ
+├── 01-technical/                                
+│   ├── 01-libs/
+│   │   ├── frontend/
+│   │   └── backend/
+│   ├── 02-app-architecture.md
+│   ├── 03-multimodal-pipeline.md
+│   ├── 04-conversational-state-lifecycle.md
+│   ├── 05-hardware-memory-optimization.md
+│   └── benchmark-results.json
 │
-├── 02-product/                                  # Góc nhìn nghiệp vụ sản phẩm & Đối soát UI
-│   ├── overview.md                              # Bài toán sản phẩm & ma trận đối soát 11 component UI
-│   ├── user-flows.md                            # 4 kịch bản luồng tương tác người dùng thực tế
-│   └── dataset-spec.md                          # Đặc tả dữ liệu 5.000 mẫu H&M & quy chuẩn giá VND
+├── 02-product/
+│   ├── overview.md
+│   ├── user-flows.md
+│   └── dataset-spec.md
 │
-├── 03-specs/                                    # Hợp đồng giao tiếp (Contracts) & Cơ sở dữ liệu
-│   ├── api-specs.md                             # Đặc tả 5 REST endpoints (/detect, /transcribe, /search...)
-│   ├── api.json                                 # OpenAPI 3.1 schema JSON export từ FastAPI
-│   └── database-schema.md                       # Đặc tả CSDL PostgreSQL 16 & mô hình 14 bảng TPT
+├── 03-specs/                                   
+│   ├── api-specs.md
+│   ├── api.json
+│   └── database-schema.md
 │
-└── 04-architecture/                             # Quy chuẩn kiến trúc mã nguồn toàn dự án
-    └── README.md                                # Quy tắc Monorepo, luồng dữ liệu 1 chiều & testing (>80%)
+└── 04-architecture/                             
+    └── README.md
 ```
 
 ---
@@ -111,37 +111,3 @@ docs/
 - [runbook.md](runbook.md): Hướng dẫn chi tiết từng bước khởi chạy, kiểm thử và xử lý sự cố cho **Máy hiện tại** và **Thiết bị mới**.
 
 
----
-
-## 4. Hướng Dẫn Khởi Động Nhanh (Quick Start Onboarding)
-
-### Bước 1: Khởi động CSDL PostgreSQL + pgvector
-```powershell
-docker compose up -d
-```
-Container `fashion_search_postgres` sẽ lắng nghe tại cổng `5434`.
-
-### Bước 2: Khởi động Backend FastAPI Server
-```powershell
-# Kích hoạt môi trường conda httt-search-system
-D:\miniconda3\envs\httt-search-system\python.exe backend/main.py
-```
-Swagger UI sẵn sàng tại `http://localhost:8000/docs`.
-
-### Bước 3: Khởi động Frontend Web (Next.js Lookbook Studio)
-```powershell
-cd web
-npm run dev
-```
-Mở trình duyệt truy cập `http://localhost:3000`.
-
-### Bước 4: Chạy kiểm thử tự động
-- **Chạy toàn bộ 93 test cases backend:**
-  ```powershell
-  D:\miniconda3\envs\httt-search-system\python.exe -m pytest tests/
-  ```
-- **Chạy 9 test suites frontend:**
-  ```powershell
-  cd web
-  npm test -- --watchAll=false
-  ```
