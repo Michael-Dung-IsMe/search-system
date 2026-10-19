@@ -1,6 +1,6 @@
 """Zero-shot Fashion Object Detector using OWL-ViT.
 
-Detects fashion garments (jacket, pants, shoes, bag, dress, top, skirt) from outfit images
+Detects fashion garments using labels aligned with the product catalog
 and returns normalized bounding boxes [ymin, xmin, ymax, xmax] with MD5 caching.
 """
 
@@ -18,25 +18,22 @@ import torch
 
 logger = logging.getLogger("detector")
 
-# Default open vocabulary queries for fashion items
+# Keep detection coarse: OWL-ViT locates the garment, while FashionSigLIP
+# and the catalog neighbors determine the detailed product category.
 DEFAULT_QUERIES: List[str] = [
-    "a jacket or coat",
-    "pants or trousers",
-    "shoes or sneakers",
-    "a handbag or backpack",
-    "a dress",
-    "a shirt or t-shirt",
+    "a clothing top",
+    "a pair of pants",
     "a skirt",
+    "a dress",
+    "a pair of shoes",
 ]
 
 LABEL_CANONICAL_MAP: Dict[str, str] = {
-    "a jacket or coat": "Jacket",
-    "pants or trousers": "Pants",
-    "shoes or sneakers": "Shoes",
-    "a handbag or backpack": "Bag",
-    "a dress": "Dress",
-    "a shirt or t-shirt": "Top",
+    "a clothing top": "UpperGarment",
+    "a pair of pants": "Pants",
     "a skirt": "Skirt",
+    "a dress": "Dress",
+    "a pair of shoes": "Shoes",
 }
 
 
@@ -173,7 +170,7 @@ class ObjectDetector:
         mock_boxes = [
             {
                 "box_id": "box_top_1",
-                "label": "Top",
+                "label": "UpperGarment",
                 "score": 0.89,
                 "box_2d": [0.15, 0.25, 0.55, 0.75],
             },

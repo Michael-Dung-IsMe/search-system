@@ -21,6 +21,7 @@ from PIL import Image
 from backend.core.detector import ObjectDetector
 from backend.core.embedder import MultimodalEmbedder
 from backend.core.extractor import IntentExtractor
+from backend.core.normalizer import EntityNormalizer
 from backend.core.reranker import SoftReranker
 from backend.core.retriever import CandidateRetriever
 from backend.core.state_manager import StateManager
@@ -44,7 +45,17 @@ SESSION_QUERY_VECTORS: Dict[str, Any] = {}
 SESSION_QUERY_TYPES: Dict[str, str] = {}
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
-ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/x-m4a"}
+ALLOWED_AUDIO_TYPES = {
+    "audio/webm",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mpeg",
+    "audio/mpga",
+    "audio/mp4",
+    "audio/m4a",
+    "audio/x-m4a",
+}
+ALLOWED_AUDIO_EXTENSIONS = (".webm", ".wav", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a")
 UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -85,7 +96,17 @@ async def detect_objects(file: UploadFile = File(...)) -> DetectResponse:
 
 @router.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio(file: UploadFile = File(...)) -> TranscribeResponse:
-    """Transcribes an audio blob query into Vietnamese text using Whisper."""
+    """Transcribes a completed audio query into Vietnamese text."""
+    filename = file.filename or "recording.webm"
+    if (
+        file.content_type not in ALLOWED_AUDIO_TYPES
+        and not filename.lower().endswith(ALLOWED_AUDIO_EXTENSIONS)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported audio type: {file.content_type}.",
+        )
+
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(
@@ -97,7 +118,7 @@ async def transcribe_audio(file: UploadFile = File(...)) -> TranscribeResponse:
         transcriber = SpeechTranscriber.get_instance()
         transcript = transcriber.transcribe(
             audio_input=audio_bytes,
-            filename=file.filename or "recording.webm",
+            filename=filename,
             language="vi",
         )
         return TranscribeResponse(text=transcript, language="vi")
@@ -129,6 +150,8 @@ async def search_products(
     active_query_type = query_type or SESSION_QUERY_TYPES.get(sid, "text")
     query_vector = SESSION_QUERY_VECTORS.get(sid)
     crop_image_path = None
+    image_was_uploaded = False
+    explicit_category_override: Optional[str] = None
 
     # 2. Process uploaded image or crop box
     if image is not None:
@@ -156,6 +179,7 @@ async def search_products(
                 embedder = MultimodalEmbedder.get_instance()
                 query_vector = embedder.encode_image(pil_img)
                 active_query_type = "image"
+                image_was_uploaded = True
                 SESSION_QUERY_VECTORS[sid] = query_vector
                 SESSION_QUERY_TYPES[sid] = active_query_type
 
@@ -195,7 +219,55 @@ async def search_products(
     if query_text and query_text.strip():
         extractor = IntentExtractor()
         extracted_intent = extractor.extract(query_text)
+
+        # For image + text search, the image supplies the base product category.
+        # Text overrides it only when the user names a specific catalog type.
+        if image_was_uploaded:
+            normalized_text = EntityNormalizer.normalize_phonetics(query_text)
+            explicit_category = EntityNormalizer.extract_category(normalized_text)
+            if explicit_category and explicit_category[1] != "Pants":
+                explicit_category_override = explicit_category[1]
+                extracted_intent.category = explicit_category_override
+                logger.info(
+                    "Multimodal category | source=text_override | category=%s",
+                    explicit_category_override,
+                )
+            else:
+                extracted_intent.category = None
+                state.category = None
+                logger.info(
+                    "Multimodal category | source=image_pending | ignored_llm_guess=true"
+                )
+
+        if image_was_uploaded or reference_article_id:
+            extracted_intent.intent_type = "product_search"
+
         state = StateManager.merge_intent(state, extracted_intent, previous_results)
+
+        if extracted_intent.intent_type == "conversation":
+            latency = int((time.time() - start_time) * 1000)
+            message = (
+                "Xin chào! Tôi là trợ lý tìm kiếm thời trang. "
+                "Bạn có thể mô tả loại áo, quần, váy hoặc giày mà bạn muốn tìm."
+            )
+            SESSION_STATES[sid] = state
+            logger.info(
+                "Conversation-only query skipped product retrieval | query=%r",
+                query_text,
+            )
+            return SearchResponse(
+                session_id=sid,
+                turn_index=state.turn_index,
+                total_results=0,
+                search_state=state,
+                items=[],
+                has_exact_match=False,
+                exact_items=[],
+                similar_items=[],
+                message=message,
+                response_type="conversation",
+                latency_ms=latency,
+            )
 
         # If no visual vector yet, compute text query vector
         if query_vector is None or image is None:
@@ -206,6 +278,10 @@ async def search_products(
             SESSION_QUERY_VECTORS[sid] = query_vector
             SESSION_QUERY_TYPES[sid] = active_query_type
 
+    elif image_was_uploaded:
+        # A newly uploaded image replaces any stale category from the session.
+        state.category = None
+
     # 5. Retrieve partitioned candidates (Exact Matches vs Similar Recommendations)
     exact_candidates: List[SearchResultItem] = []
     similar_candidates: List[SearchResultItem] = []
@@ -213,6 +289,35 @@ async def search_products(
 
     try:
         with get_db_connection() as conn:
+            if (
+                image_was_uploaded
+                and explicit_category_override is None
+                and query_vector is not None
+            ):
+                try:
+                    inferred_category, category_confidence = (
+                        CandidateRetriever.infer_category_from_image(
+                            conn=conn,
+                            query_vector=query_vector,
+                        )
+                    )
+                    if inferred_category:
+                        state.category = inferred_category
+                        state.active_chips = StateManager.generate_chips(state)
+                        logger.info(
+                            "Multimodal category | source=image_neighbors | category=%s | confidence=%.2f",
+                            inferred_category,
+                            category_confidence,
+                        )
+                    else:
+                        logger.info(
+                            "Multimodal category | source=image_neighbors | category=none | confidence=%.2f",
+                            category_confidence,
+                        )
+                except Exception as e:
+                    conn.rollback()
+                    logger.warning("Could not infer category from image neighbors: %s", e)
+
             exact_candidates, similar_candidates = CandidateRetriever.retrieve_partitioned(
                 conn=conn,
                 state=state,
@@ -388,7 +493,7 @@ async def get_product_detail(product_id: str) -> ProductDetailResponse:
                     price_vnd=int(row[3]),
                     gender=str(row[4]),
                     color_code=str(row[5]),
-                    color_name=str(row[6]),
+                    color_name=EntityNormalizer.get_color_name(str(row[5])),
                     category_group=str(row[7]),
                     category_sub=str(row[8]),
                     detail_desc=str(row[9]),

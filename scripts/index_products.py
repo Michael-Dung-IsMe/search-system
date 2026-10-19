@@ -54,21 +54,40 @@ def calculate_image_hash(image_input: Union[Path, str, bytes, Image.Image]) -> s
 COLOR_SYNONYMS: Dict[str, List[str]] = {
     "09": ["đen", "black", "huyền", "tối"],
     "10": ["trắng", "white", "bạch", "sáng"],
-    "06": ["xám", "ghi", "grey", "gray"],
-    "71": ["xanh dương nhạt", "light blue", "da trời"],
-    "14": ["xanh navy", "xanh đen", "dark blue", "navy"],
-    "12": ["xanh lam", "blue", "xanh dương"],
-    "08": ["xám đậm", "dark grey", "than"],
-    "02": ["be", "beige", "kem"],
-    "01": ["trắng sữa", "off white", "kem sáng"],
+    "06": ["xám nhạt", "ghi nhạt", "light grey", "light gray"],
+    "07": ["xám", "ghi", "grey", "gray"],
+    "08": ["xám đậm", "ghi đậm", "dark grey", "dark gray"],
+    "11": ["trắng ngà", "trắng kem", "off white"],
+    "12": ["be nhạt", "light beige"],
+    "13": ["be", "beige", "kem"],
+    "14": ["be đậm", "dark beige"],
+    "15": ["be xám", "greyish beige"],
+    "17": ["nâu", "brown", "nâu vàng", "yellowish brown"],
+    "19": ["kaki", "khaki", "kaki xanh", "greenish khaki"],
+    "21": ["vàng nhạt", "light yellow"],
+    "22": ["vàng", "yellow"],
+    "23": ["vàng đậm", "dark yellow"],
+    "31": ["cam nhạt", "light orange"],
+    "32": ["cam", "orange"],
+    "33": ["cam đậm", "dark orange"],
+    "41": ["đỏ nhạt", "light red"],
     "42": ["đỏ", "red", "đỏ tươi"],
-    "43": ["đỏ đô", "dark red", "đỏ rượu", "maroon"],
-    "51": ["hồng", "pink"],
-    "61": ["tím", "purple", "violet"],
-    "73": ["xanh lá", "green", "lục"],
-    "81": ["vàng", "yellow"],
-    "31": ["cam", "orange"],
-    "21": ["nâu", "brown", "nâu đất"],
+    "43": ["đỏ đậm", "đỏ đô", "dark red", "maroon"],
+    "51": ["hồng nhạt", "light pink"],
+    "52": ["hồng", "pink"],
+    "53": ["hồng đậm", "dark pink"],
+    "61": ["tím nhạt", "light purple"],
+    "62": ["tím", "purple", "violet"],
+    "63": ["tím đậm", "dark purple"],
+    "71": ["xanh dương nhạt", "light blue", "da trời"],
+    "72": ["xanh dương", "xanh lam", "blue"],
+    "73": ["xanh dương đậm", "xanh navy", "dark blue", "navy"],
+    "81": ["xanh ngọc nhạt", "light turquoise"],
+    "82": ["xanh ngọc", "turquoise"],
+    "83": ["xanh ngọc đậm", "dark turquoise"],
+    "91": ["xanh lá nhạt", "light green"],
+    "92": ["xanh lá", "green", "lục"],
+    "93": ["xanh lá đậm", "dark green"],
 }
 
 
@@ -100,13 +119,14 @@ class EmbeddingExtractor:
         model_name: str = "hf-hub:Marqo/marqo-fashionSigLIP",
         text_model_name: str = "text-embedding-3-small",
         use_mock: bool = False,
+        use_openai: bool = True,
     ):
         self.use_mock = use_mock
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = None
         self.preprocess = None
         self.tokenizer = None
-        self.openai_key = os.getenv("OPENAI_API_KEY")
+        self.openai_key = os.getenv("OPENAI_API_KEY") if use_openai else None
         self.text_model_name = text_model_name
         self.text_dimensions = 768
         self._openai_client = None
@@ -301,6 +321,7 @@ def sync_colors(conn: psycopg.Connection, df: pd.DataFrame) -> None:
         conn.commit()
         logger.info("Synchronized colors in database.")
     except Exception as e:
+        conn.rollback()
         logger.info("Colors table not present or optional (%s), skipping DB color sync.", e)
 
 
@@ -556,6 +577,11 @@ def main() -> None:
     parser.add_argument("--images-dir", type=str, default="data/images", help="Images directory")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for embedding generation")
     parser.add_argument("--mock-embedding", action="store_true", help="Use mock embedding for quick local testing")
+    parser.add_argument(
+        "--local-text-embedding",
+        action="store_true",
+        help="Use the local SigLIP text encoder even when OPENAI_API_KEY is configured",
+    )
     parser.add_argument("--save-embeddings", type=str, default="data/embeddings.npz", help="Path to save precomputed embeddings (.npz)")
     parser.add_argument("--no-save-embeddings", action="store_true", help="Disable saving embeddings to file")
     parser.add_argument("--load-embeddings", type=str, default=None, help="Path to load precomputed embeddings (.npz) instead of re-encoding")
@@ -564,7 +590,10 @@ def main() -> None:
     save_path = None if args.no_save_embeddings else Path(args.save_embeddings)
     load_path = Path(args.load_embeddings) if args.load_embeddings else None
 
-    extractor = EmbeddingExtractor(use_mock=args.mock_embedding)
+    extractor = EmbeddingExtractor(
+        use_mock=args.mock_embedding,
+        use_openai=not args.local_text_embedding,
+    )
     index_dataset(
         csv_path=Path(args.csv),
         images_root=Path(args.images_dir),

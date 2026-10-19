@@ -35,9 +35,10 @@ class StateManager:
             ))
 
         if state.category:
+            category_label = "Quần" if state.category == "Pants" else state.category
             chips.append(ConstraintChip(
                 chip_id=f"category:{state.category}",
-                label=f"Loại: {state.category}",
+                label=f"Loại: {category_label}",
                 chip_type="category",
                 value=state.category,
             ))

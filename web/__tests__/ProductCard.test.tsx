@@ -75,6 +75,21 @@ describe('ProductGrid Component', () => {
     expect(screen.getByText('Không tìm thấy sản phẩm phù hợp')).toBeInTheDocument();
   });
 
+  test('renders assistant response without a product empty-state message', () => {
+    render(
+      <ProductGrid
+        items={[]}
+        responseType="conversation"
+        message="Xin chào! Tôi có thể giúp bạn tìm sản phẩm thời trang."
+        onFindSimilar={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Trợ lý tìm kiếm thời trang')).toBeInTheDocument();
+    expect(screen.getByText(/Xin chào!/i)).toBeInTheDocument();
+    expect(screen.queryByText('Không tìm thấy sản phẩm phù hợp')).not.toBeInTheDocument();
+  });
+
   test('renders product cards when items are provided', () => {
     render(
       <ProductGrid

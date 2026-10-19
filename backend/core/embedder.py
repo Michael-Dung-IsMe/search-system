@@ -35,7 +35,13 @@ class MultimodalEmbedder:
         self.model = None
         self.preprocess = None
         self.tokenizer = None
-        self.openai_key = os.getenv("OPENAI_API_KEY")
+        local_text_embedding = os.getenv("LOCAL_TEXT_EMBEDDING", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.openai_key = None if local_text_embedding else os.getenv("OPENAI_API_KEY")
         self.text_model_name = text_model_name
         self.text_dimensions = 768
         self._openai_client = None

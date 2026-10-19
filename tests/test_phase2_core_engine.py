@@ -40,16 +40,27 @@ class TestEntityNormalizer:
         assert EntityNormalizer.extract_color("áo màu đen") == ("09", "Black")
         assert EntityNormalizer.extract_color("white shirt") == ("10", "White")
         # Composite color takes precedence over single color
-        assert EntityNormalizer.extract_color("áo thun xanh navy") == ("14", "Dark Blue")
+        assert EntityNormalizer.extract_color("áo thun xanh navy") == ("73", "Dark Blue")
+        assert EntityNormalizer.extract_color("quần màu hồng") == ("52", "Pink")
+        assert EntityNormalizer.get_color_name("51") == "Light Pink"
+        assert EntityNormalizer.get_color_name("52") == "Pink"
         # Non-existent color
         assert EntityNormalizer.extract_color("áo màu cầu vồng") is None
 
     def test_extract_category(self):
         assert EntityNormalizer.extract_category("áo thun cổ tròn") == ("Garment Upper body", "T-shirt")
         assert EntityNormalizer.extract_category("quần jean ống rộng") == ("Garment Lower body", "Trousers")
+        assert EntityNormalizer.extract_category("quần đùi ngắn") == ("Garment Lower body", "Shorts")
+        assert EntityNormalizer.extract_category("quần ngắn") == ("Garment Lower body", "Shorts")
+        assert EntityNormalizer.extract_category("quần soóc") == ("Garment Lower body", "Shorts")
+        assert EntityNormalizer.extract_category("short pants") == ("Garment Lower body", "Shorts")
+        assert EntityNormalizer.extract_category("quần này") == ("Garment Lower body", "Pants")
+        assert EntityNormalizer.extract_category("áo blazer nữ") == ("Garment Upper body", "Blazer")
+        assert EntityNormalizer.extract_category("giày nữ") == ("Shoes", "Shoes")
         assert EntityNormalizer.extract_category("giày sneaker thể thao") == ("Shoes", "Sneakers")
         assert EntityNormalizer.extract_category("váy dạ hội") == ("Garment Full body", "Dress")
-        assert EntityNormalizer.extract_category("balo du lịch") == ("Bags", "Backpack")
+        # Bags are not present in the current 1,000-product catalog.
+        assert EntityNormalizer.extract_category("balo du lịch") is None
         assert EntityNormalizer.extract_category("đồng hồ đeo tay") is None
 
     def test_normalize_material(self):
@@ -98,6 +109,34 @@ class TestIntentExtractor:
         assert intent.category == "T-shirt"
         assert intent.reference_ordinal == 2
 
+    def test_rule_based_chitchat_is_not_a_product_search(self):
+        intent = IntentExtractor(use_mock=True).extract("Xin chào, bạn có khỏe không?")
+        assert intent.intent_type == "conversation"
+        assert intent.category is None
+
+    def test_generic_pants_query_keeps_a_pants_family_constraint(self):
+        intent = IntentExtractor(use_mock=True).extract("tìm quần màu hồng")
+        assert intent.intent_type == "product_search"
+        assert intent.category == "Pants"
+        assert intent.color == "Pink"
+
+    @patch("openai.OpenAI")
+    def test_openai_conversation_intent_is_preserved(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_response = MagicMock()
+        mock_choice = MagicMock()
+        mock_choice.message.parsed = QueryIntent(intent_type="conversation")
+        mock_response.choices = [mock_choice]
+        mock_client.beta.chat.completions.parse.return_value = mock_response
+
+        intent = IntentExtractor(
+            openai_api_key="mock_key",
+            use_mock=False,
+        ).extract("Xin chào, bạn có khỏe không?")
+
+        assert intent.intent_type == "conversation"
+
     @patch("openai.OpenAI")
     def test_openai_extraction_success(self, mock_openai_cls):
         mock_client = MagicMock()
@@ -117,8 +156,33 @@ class TestIntentExtractor:
         extractor = IntentExtractor(openai_api_key="mock_key", use_mock=False)
         intent = extractor.extract("áo blazer nữ")
 
-        assert intent.category == "Jacket"
+        assert intent.category == "Blazer"
         assert intent.gender == "Ladieswear"
+
+    @patch("openai.OpenAI")
+    def test_openai_output_is_reconciled_with_explicit_short_category(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_response = MagicMock()
+        mock_choice = MagicMock()
+        mock_choice.message.parsed = QueryIntent(
+            category="Trousers",
+            gender="Unisex",
+            color="White",
+            max_price=1_000_000,
+        )
+        mock_response.choices = [mock_choice]
+        mock_client.beta.chat.completions.parse.return_value = mock_response
+
+        intent = IntentExtractor(
+            openai_api_key="mock_key",
+            use_mock=False,
+        ).extract("quần short màu trắng dưới 1 triệu")
+
+        assert intent.category == "Shorts"
+        assert intent.gender is None
+        assert intent.color == "White"
+        assert intent.max_price == 1_000_000
 
     @patch("openai.OpenAI")
     def test_openai_failure_fallback_to_rule_based(self, mock_openai_cls):
@@ -253,6 +317,17 @@ class TestCandidateRetriever:
         assert "ORDER BY p.image_embedding <=> %(query_vec)s::vector ASC" in sql_img
         assert "1 - (p.image_embedding <=> %(query_vec)s::vector) AS raw_sim" in sql_img
 
+    def test_build_sql_generic_pants_excludes_shoes_and_skirts(self):
+        sql, params = CandidateRetriever.build_sql(
+            SearchState(category="Pants", color="Pink"),
+            has_vector=False,
+        )
+
+        assert "c.sub_category IN" in sql
+        assert params["pants_trousers"] == "Trousers"
+        assert params["pants_shorts"] == "Shorts"
+        assert params["color_code"] == EntityNormalizer.get_color_code("Pink")
+
     def test_retrieve_candidates_mock_db(self):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -273,6 +348,42 @@ class TestCandidateRetriever:
         assert items[0].article_id == "0123456789"
         assert items[0].price_vnd == 299000
         assert items[0].visual_similarity == 0.88
+
+    def test_infer_category_from_image_neighbor_vote(self):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = [
+            ("Trousers", 16, 0.81),
+            ("Shorts", 3, 0.73),
+            ("Skirt", 1, 0.68),
+        ]
+
+        category, confidence = CandidateRetriever.infer_category_from_image(
+            mock_conn,
+            np.ones(768, dtype=np.float32),
+        )
+
+        assert category == "Trousers"
+        assert confidence == 0.8
+
+    def test_infer_category_from_image_rejects_ambiguous_vote(self):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = [
+            ("Trousers", 10, 0.81),
+            ("Shorts", 9, 0.80),
+            ("Skirt", 1, 0.70),
+        ]
+
+        category, confidence = CandidateRetriever.infer_category_from_image(
+            mock_conn,
+            np.ones(768, dtype=np.float32),
+        )
+
+        assert category is None
+        assert confidence == 0.5
 
 
 class TestSoftRerankerAndExplainer:
@@ -349,14 +460,15 @@ class TestPhase2MultimodalLogicAdditions:
     def test_color_family_expansion_in_normalizer(self):
         from backend.core.normalizer import EntityNormalizer
 
-        # Beige family contains Cream, Khaki, Off White
+        # Relaxation stays inside the light/regular/dark dataset family.
         beige_family = EntityNormalizer.get_color_family("Beige")
-        assert "Beige" in beige_family
-        assert any(c in beige_family for c in ["Cream", "Khaki", "Off White"])
+        assert beige_family == ["12", "13", "14", "15"]
 
-        # Black family
+        pink_family = EntityNormalizer.get_color_family("Pink")
+        assert pink_family == ["51", "52", "53"]
+
         black_family = EntityNormalizer.get_color_family("Black")
-        assert "Black" in black_family
+        assert "09" in black_family
 
     def test_retrieve_from_csv_partitioned_logic(self):
         # Case A: Exact search where matching items exist
@@ -391,15 +503,22 @@ class TestPhase2MultimodalLogicAdditions:
         sql_exact, params_exact = CandidateRetriever.build_sql(
             state, has_vector=True, query_type="text", min_similarity=0.58
         )
-        assert "p.color_code ILIKE %(color)s" in sql_exact
+        assert "p.color_code = %(color_code)s" in sql_exact
+        assert params_exact["color_code"] == "13"
         assert f"(1 - (p.text_embedding <=> %(query_vec)s::vector)) >= %(min_sim)s" in sql_exact
         assert params_exact["min_sim"] == 0.58
 
         # Phase 2 SQL: relaxed colors
         sql_relaxed, params_relaxed = CandidateRetriever.build_sql(
-            state, has_vector=True, query_type="text", min_similarity=0.58, relaxed_colors=["Beige", "Cream", "Khaki"]
+            state,
+            has_vector=True,
+            query_type="text",
+            min_similarity=0.58,
+            relaxed_colors=EntityNormalizer.get_color_family("Beige"),
         )
         assert "rel_col_0" in params_relaxed
         assert "rel_col_1" in params_relaxed
+        assert params_relaxed["rel_col_0"] == "12"
+        assert params_relaxed["rel_col_1"] == "13"
         assert f"(1 - (p.text_embedding <=> %(query_vec)s::vector)) >= %(min_sim)s" in sql_relaxed
 

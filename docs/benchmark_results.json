@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-10-18 17:32:04",
+  "timestamp": "2026-10-19 15:23:40",
   "hardware": {
-    "gpu_device": "NVIDIA GeForce GTX 1660 Ti",
-    "cuda_available": true,
+    "gpu_device": "CPU",
+    "cuda_available": false,
     "peak_vram_mb": 0.0,
     "allocated_vram_mb": 0.0,
     "vram_limit_target_mb": 4096.0,
@@ -10,17 +10,17 @@
   },
   "performance": {
     "total_steps": 6,
-    "average_latency_ms": 1072.63,
-    "max_latency_ms": 1794.96,
+    "average_latency_ms": 984.75,
+    "max_latency_ms": 1570.63,
     "latency_target_ms": 1000.0,
-    "latency_status": "EXCEEDED"
+    "latency_status": "PASS (< 1.0s)"
   },
   "steps": [
     {
       "step": 1,
       "name": "Upload Outfit & OWL-ViT Detect",
       "action": "Upload outfit image -> Detect garments with bounding boxes",
-      "latency_ms": 9.82,
+      "latency_ms": 5.85,
       "gpu_allocated_mb": 0.0,
       "details": "Detected 3 boxes. Selected box: Shoes"
     },
@@ -28,39 +28,39 @@
       "step": 2,
       "name": "Initial Visual Search",
       "action": "User selects Shoes crop + \"Tìm đôi giống thế này\"",
-      "latency_ms": 1410.74,
+      "latency_ms": 1570.63,
       "gpu_allocated_mb": 0.0,
-      "details": "Returned 50 visual match items. Top-1: Debbie"
+      "details": "Returned 50 visual match items. Top-1: SIGGE 2PK"
     },
     {
       "step": 3,
       "name": "Conversational Refinement (Hard Filters)",
       "action": "User refines: \"Màu trắng, dưới 1 triệu\"",
-      "latency_ms": 1554.83,
+      "latency_ms": 1383.96,
       "gpu_allocated_mb": 0.0,
-      "details": "Active chips: 3. Max price: 1000000đ. Matches: 50"
+      "details": "Active chips: 2. Max price: 1000000đ. Matches: 42"
     },
     {
       "step": 4,
       "name": "Negative Constraint & Reference Query",
       "action": "User speaks: \"Giống số 1 nhưng thể thao hơn, không phải da\"",
-      "latency_ms": 1794.96,
+      "latency_ms": 1486.72,
       "gpu_allocated_mb": 0.0,
-      "details": "Negative constraint [exclude_materials: da]. Penalty (-0.30) applied to leather products. Matches: 50"
+      "details": "Negative constraint [exclude_materials: da]. Penalty (-0.30) applied to leather products. Matches: 42"
     },
     {
       "step": 5,
       "name": "Interactive Constraint Removal",
       "action": "User clicks [✕] on chip 'exclude_material:leather' -> Instant re-rank",
-      "latency_ms": 70.55,
+      "latency_ms": 48.09,
       "gpu_allocated_mb": 0.0,
-      "details": "Chip removed. Candidate list re-ranked dynamically with 50 products."
+      "details": "Chip removed. Candidate list re-ranked dynamically with 42 products."
     },
     {
       "step": 6,
       "name": "Voice-to-Search Full Flow",
       "action": "Audio recorded -> Whisper transcribe -> Unified search ('tìm đôi giày sneaker màu trắng không phải da dưới 1 triệu')",
-      "latency_ms": 1594.89,
+      "latency_ms": 1413.27,
       "gpu_allocated_mb": 0.0,
       "details": "Transcript text received: 'tìm đôi giày sneaker màu trắng không phải da dưới 1 triệu'. Total matches: 6"
     }

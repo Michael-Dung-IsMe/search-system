@@ -55,6 +55,7 @@ export default function Home() {
   const [similarItems, setSimilarItems] = useState<SearchResultItem[]>([]);
   const [hasExactMatch, setHasExactMatch] = useState<boolean>(true);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [responseType, setResponseType] = useState<'search_results' | 'conversation'>('search_results');
   const [totalResults, setTotalResults] = useState<number>(0);
   const [latencyMs, setLatencyMs] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -129,6 +130,7 @@ export default function Home() {
         setSimilarItems(res.similar_items || []);
         setHasExactMatch(res.has_exact_match !== undefined ? res.has_exact_match : true);
         setSearchMessage(res.message || null);
+        setResponseType(res.response_type || 'search_results');
         setTotalResults(res.total_results);
         setLatencyMs(res.latency_ms);
       } catch (err: unknown) {
@@ -245,6 +247,7 @@ export default function Home() {
       setSimilarItems(res.similar_items || []);
       setHasExactMatch(res.has_exact_match !== undefined ? res.has_exact_match : true);
       setSearchMessage(res.message || null);
+      setResponseType(res.response_type || 'search_results');
       setTotalResults(res.total_results);
       setLatencyMs(res.latency_ms);
     } catch (err: unknown) {
@@ -460,15 +463,21 @@ export default function Home() {
                 <div className="flex items-center justify-between pb-3 border-b border-gray-200">
                   <div className="flex items-baseline gap-2">
                     <h2 className="text-base sm:text-lg font-bold text-gray-900">
-                      {totalResults > 0 ? `${totalResults} sản phẩm phù hợp` : 'Kết quả tìm kiếm'}
+                      {responseType === 'conversation'
+                        ? 'Trợ lý thời trang'
+                        : totalResults > 0
+                          ? `${totalResults} sản phẩm phù hợp`
+                          : 'Kết quả tìm kiếm'}
                     </h2>
                     {latencyMs > 0 && (
                       <span className="text-xs text-gray-400">• {latencyMs}ms</span>
                     )}
                   </div>
-                  <span className="text-xs text-gray-500">
-                    Sắp xếp: <strong className="text-gray-900">Liên quan nhất</strong>
-                  </span>
+                  {responseType === 'search_results' && (
+                    <span className="text-xs text-gray-500">
+                      Sắp xếp: <strong className="text-gray-900">Liên quan nhất</strong>
+                    </span>
+                  )}
                 </div>
 
                 {/* Product Grid */}
@@ -478,6 +487,7 @@ export default function Home() {
                   similarItems={similarItems}
                   hasExactMatch={hasExactMatch}
                   message={searchMessage}
+                  responseType={responseType}
                   isLoading={isProcessing && items.length === 0 && exactItems.length === 0}
                   onFindSimilar={handleFindSimilar}
                 />

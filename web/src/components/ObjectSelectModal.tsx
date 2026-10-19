@@ -18,6 +18,21 @@ interface ObjectSelectModalProps {
   }) => void;
 }
 
+const RELIABLE_DETECTION_SCORE = 0.35;
+
+const VI_LABEL_MAP: Record<string, string> = {
+  UpperGarment: 'Áo',
+  Pants: 'Quần',
+  Skirt: 'Chân váy',
+  Dress: 'Váy / Đầm',
+  Shoes: 'Giày',
+};
+
+const displayBoxLabel = (box: DetectedBox) =>
+  box.score >= RELIABLE_DETECTION_SCORE
+    ? VI_LABEL_MAP[box.label] || box.label
+    : 'Chưa xác định';
+
 export const ObjectSelectModal: React.FC<ObjectSelectModalProps> = ({
   isOpen,
   onClose,
@@ -50,8 +65,11 @@ export const ObjectSelectModal: React.FC<ObjectSelectModalProps> = ({
 
   // Default selection: If boxes loaded and no box selected, pick top confidence box
   useEffect(() => {
-    if (sortedBoxes.length > 0 && !selectedBoxId) {
-      setSelectedBoxId(sortedBoxes[0].box_id);
+    const bestReliableBox = sortedBoxes.find(
+      (box) => box.score >= RELIABLE_DETECTION_SCORE
+    );
+    if (bestReliableBox && !selectedBoxId) {
+      setSelectedBoxId(bestReliableBox.box_id);
     }
   }, [sortedBoxes, selectedBoxId]);
 
@@ -198,7 +216,7 @@ export const ObjectSelectModal: React.FC<ObjectSelectModalProps> = ({
                           : 'bg-gray-900/80 text-white opacity-85'
                       }`}
                     >
-                      {box.label} ({Math.round(box.score * 100)}%)
+                      {displayBoxLabel(box)} ({Math.round(box.score * 100)}%)
                     </span>
                   </div>
                 );
@@ -251,7 +269,7 @@ export const ObjectSelectModal: React.FC<ObjectSelectModalProps> = ({
                               {isSelected ? <Check size={12} strokeWidth={3} /> : null}
                             </div>
                             <span className="text-sm font-semibold text-gray-900">
-                              {box.label}
+                              {displayBoxLabel(box)}
                             </span>
                           </div>
                           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">

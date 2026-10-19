@@ -1,8 +1,4 @@
-"""Speech-to-Text Transcriber for Vietnamese Fashion Voice Queries.
-
-Integrates OpenAI Whisper API with domain-tailored fashion prompt,
-faster-whisper local fallback, and mock fallback for deterministic tests.
-"""
+"""Speech-to-text for Vietnamese voice queries via OpenAI."""
 
 from __future__ import annotations
 
@@ -16,8 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger("transcriber")
-
-FASHION_STT_PROMPT = "thời trang, sneaker, blazer, denim, hoodie, quần áo, áo màu vàng, đầm, váy, giày dép, túi xách, cotton, canvas, leather, màu sắc, vàng, đỏ, xanh, đen, trắng, xám, be, cam, tím, hồng"
+OPENAI_STT_MODEL = "gpt-transcribe"
 
 
 class SpeechTranscriber:
@@ -43,29 +38,32 @@ class SpeechTranscriber:
         if self.use_mock:
             return self._transcribe_mock(filename)
 
-        # 1. Try OpenAI Whisper API if key available (refresh from env if needed)
+        # Refresh the key because local development may load .env after the
+        # singleton was first created.
         api_key = self.openai_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
             load_dotenv(override=True)
             api_key = os.getenv("OPENAI_API_KEY")
 
-        if api_key:
-            try:
-                transcript = self._transcribe_openai(audio_input, filename, language, api_key=api_key)
-                logger.info("Transcribed audio using OpenAI Whisper API: '%s'", transcript)
-                return transcript
-            except Exception as e:
-                logger.warning("OpenAI Whisper API failed (%s), attempting local/mock fallback...", e)
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for speech transcription")
 
-        # 2. Try faster-whisper local fallback if installed
         try:
-            logger.info("Falling back to local faster-whisper...")
-            return self._transcribe_faster_whisper(audio_input)
-        except Exception as e:
-            logger.warning("faster-whisper failed (%s), using mock fallback.", e)
+            transcript = self._transcribe_openai(
+                audio_input,
+                filename,
+                language,
+                api_key=api_key,
+            )
+        except Exception as exc:
+            logger.error("OpenAI %s transcription failed: %s", OPENAI_STT_MODEL, exc)
+            raise RuntimeError("OpenAI speech transcription failed") from exc
 
-        # 3. Fallback mock
-        return self._transcribe_mock(filename)
+        if not transcript:
+            raise RuntimeError("OpenAI returned an empty speech transcript")
+
+        logger.info("Transcribed audio using OpenAI %s: '%s'", OPENAI_STT_MODEL, transcript)
+        return transcript
 
     def _transcribe_openai(
         self,
@@ -74,7 +72,7 @@ class SpeechTranscriber:
         language: str,
         api_key: Optional[str] = None,
     ) -> str:
-        """Calls OpenAI whisper-1 endpoint."""
+        """Transcribes a completed audio file with OpenAI GPT Transcribe."""
         from openai import OpenAI
 
         client = OpenAI(api_key=api_key or self.openai_key)
@@ -88,30 +86,14 @@ class SpeechTranscriber:
 
         try:
             transcript = client.audio.transcriptions.create(
-                model="whisper-1",
+                model=OPENAI_STT_MODEL,
                 file=audio_payload,
-                language=language,
-                prompt=FASHION_STT_PROMPT,
+                languages=[language],
             )
             return transcript.text.strip()
         finally:
             if hasattr(audio_payload, "close"):
                 audio_payload.close()
-
-    def _transcribe_faster_whisper(self, audio_input: Union[bytes, Path, str]) -> str:
-        """Local faster-whisper fallback."""
-        from faster_whisper import WhisperModel
-
-        model = WhisperModel("base", device="cpu", compute_type="int8")
-
-        if isinstance(audio_input, bytes):
-            audio_file = io.BytesIO(audio_input)
-        else:
-            audio_file = str(audio_input)
-
-        segments, _ = model.transcribe(audio_file, language="vi", initial_prompt=FASHION_STT_PROMPT)
-        text = " ".join(seg.text for seg in segments).strip()
-        return text
 
     def _transcribe_mock(self, filename: str) -> str:
         """Generates deterministic fashion voice query mock for testing."""

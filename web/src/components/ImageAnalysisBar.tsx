@@ -15,11 +15,18 @@ interface ImageAnalysisBarProps {
 }
 
 const VI_LABEL_MAP: Record<string, { label: string; icon: string }> = {
+  UpperGarment: { label: 'Áo', icon: '👕' },
   Jacket: { label: 'Áo khoác', icon: '🧥' },
-  Pants: { label: 'Quần dài', icon: '👖' },
-  Shoes: { label: 'Giày dép', icon: '👟' },
+  Coat: { label: 'Áo măng tô', icon: '🧥' },
+  Trousers: { label: 'Quần dài', icon: '👖' },
+  Shorts: { label: 'Quần ngắn', icon: '🩳' },
+  Pants: { label: 'Quần', icon: '👖' },
+  Shoes: { label: 'Giày', icon: '👟' },
   Bag: { label: 'Túi xách', icon: '👜' },
-  Dress: { label: 'Đầm / Váy liền', icon: '👗' },
+  Dress: { label: 'Váy / Đầm', icon: '👗' },
+  Shirt: { label: 'Áo sơ mi', icon: '👕' },
+  'T-shirt': { label: 'Áo thun', icon: '👕' },
+  Sweater: { label: 'Áo len', icon: '👕' },
   Top: { label: 'Áo', icon: '👕' },
   Skirt: { label: 'Chân váy', icon: '🩱' },
 };
@@ -106,9 +113,11 @@ export const ImageAnalysisBar: React.FC<ImageAnalysisBarProps> = ({
 
             {/* Detected Objects Chips */}
             {boxes.map((box) => {
-              const info = VI_LABEL_MAP[box.label] || { label: box.label, icon: '🏷️' };
-              const isSelected = selectedBoxId === box.box_id;
               const confidence = Math.round(box.score * 100);
+              const info = confidence < 35
+                ? { label: 'Chưa xác định', icon: '❓' }
+                : VI_LABEL_MAP[box.label] || { label: box.label, icon: '🏷️' };
+              const isSelected = selectedBoxId === box.box_id;
 
               return (
                 <button
