@@ -3,15 +3,12 @@ import { render, screen } from '@testing-library/react';
 import { Header } from '@/components/Header';
 
 describe('Header Component', () => {
-  test('renders brand title and default status text', () => {
+  test('renders brand and navigation items', () => {
     render(<Header />);
-    expect(screen.getByText(/Atelier Search/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Multimodal/i)).toBeInTheDocument();
-    expect(screen.getByText(/H&M Fashion Engine/i)).toBeInTheDocument();
-  });
-
-  test('renders custom status and offline indicator', () => {
-    render(<Header statusText="Offline Mode" isOnline={false} />);
-    expect(screen.getByText('Offline Mode')).toBeInTheDocument();
+    expect(screen.getByText('MIXI')).toBeInTheDocument();
+    expect(screen.getByText('SEARCH')).toBeInTheDocument();
+    expect(screen.getByText('Khám phá xu hướng')).toBeInTheDocument();
+    expect(screen.getByText('Trợ giúp')).toBeInTheDocument();
+    expect(screen.getByText('Tài khoản')).toBeInTheDocument();
   });
 });

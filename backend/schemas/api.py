@@ -5,9 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from backend.schemas.state import ConstraintChip, SearchResponse, SearchResultItem, SearchState
-
-
 class DetectedBox(BaseModel):
     """Normalized bounding box detected by OWL-ViT."""
     box_id: str = Field(..., description="Unique box ID")
@@ -31,12 +28,6 @@ class TranscribeResponse(BaseModel):
     """Response returned by /api/transcribe."""
     text: str
     language: str = "vi"
-
-
-class DeleteConstraintRequest(BaseModel):
-    """Request payload to remove an active constraint chip."""
-    session_id: str
-    chip_id: str
 
 
 class ProductDetailResponse(BaseModel):

@@ -8,7 +8,7 @@ Tài liệu này là **trang chỉ mục gốc (Table of Contents)** dẫn dắt
 
 ## 1. Bối Cảnh Hệ Thống & Cấu Hình Phần Cứng
 
-- **Mục tiêu đề án:** Xây dựng hệ thống tìm kiếm thời trang hợp nhất đa phương thức (Văn bản tự nhiên, Giọng nói tiếng Việt, Hình ảnh phối đồ outfit), duy trì trạng thái tìm kiếm qua nhiều lượt hội thoại tương tác (*Conversational Refinement*), nhận diện món đồ theo vùng chọn (*OWL-ViT*), bóc tách ý định bằng LLM (*GPT-4o-mini*), và xếp hạng sản phẩm đa tín hiệu kết hợp vector tương đồng (*Hybrid Embedding: OpenAI text-embedding-3-small + Marqo-fashionSigLIP 768-dim + PostgreSQL 16 pgvector*).
+- **Mục tiêu đề án:** Xây dựng hệ thống tìm kiếm thời trang đa phương thức theo từng request độc lập (Văn bản tự nhiên, Giọng nói tiếng Việt, Hình ảnh và Ảnh + Văn bản), nhận diện món đồ theo vùng chọn (*OWL-ViT*), bóc tách ý định bằng LLM (*GPT-4o-mini*), và xếp hạng sản phẩm đa tín hiệu kết hợp vector tương đồng (*OpenAI text-embedding-3-small + Marqo-fashionSigLIP 768-dim + PostgreSQL 16 pgvector*).
 - **Cấu hình phần cứng tối ưu hóa thực tế:**
   - **CPU:** Intel Core i7-9750H (6 cores, 12 threads)
   - **GPU:** NVIDIA GeForce GTX 1660 Ti (6.0 GB VRAM, CUDA 13.2)
@@ -29,7 +29,6 @@ docs/
 │   │   └── backend/
 │   ├── 02-app-architecture.md
 │   ├── 03-multimodal-pipeline.md
-│   ├── 04-conversational-state-lifecycle.md
 │   ├── 05-hardware-memory-optimization.md
 │   └── benchmark-results.json
 │
@@ -83,7 +82,6 @@ docs/
 #### Tài liệu Kiến trúc Lõi (`01-technical/`)
 - [02-app-architecture.md](01-technical/02-app-architecture.md): Sơ đồ kiến trúc 5 tầng, chu trình khởi động hệ thống và luồng giao tiếp.
 - [03-multimodal-pipeline.md](01-technical/03-multimodal-pipeline.md): Luồng xử lý đa phương thức 6 bước và công thức tái xếp hạng đa tín hiệu.
-- [04-conversational-state-lifecycle.md](01-technical/04-conversational-state-lifecycle.md): Vòng đời SearchState, merge intent đa lượt và cơ chế gỡ chip thời gian thực.
 - [05-hardware-memory-optimization.md](01-technical/05-hardware-memory-optimization.md): Chiến lược tối ưu VRAM trên GTX 1660 Ti (6GB), chế độ FP16 và benchmark thực nghiệm.
 
 ---

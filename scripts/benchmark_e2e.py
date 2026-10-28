@@ -1,7 +1,7 @@
 """End-to-End Walkthrough & Hardware Benchmark Script.
 
-Executes the 6-step interactive multimodal shopping scenario,
-measures end-to-end latency per turn, and benchmarks GPU VRAM footprint
+Executes a 6-step independent multimodal shopping scenario,
+measures end-to-end latency per request, and benchmarks GPU VRAM footprint
 on NVIDIA GeForce GTX 1660 Ti (or CPU fallback).
 
 Outputs structured latency and memory metrics.
@@ -155,14 +155,12 @@ def run_benchmark(use_mock: bool = False):
 
     assert resp_step2.status_code == 200, f"Step 2 failed: {resp_step2.text}"
     search_data_step2 = resp_step2.json()
-    session_id = search_data_step2["session_id"]
     items_step2 = search_data_step2["items"]
 
     logger.info(
-        "✓ Step 2 [Search Turn 1]: Returned %d items in %.1f ms (Session: %s)",
+        "✓ Step 2 [Visual Search]: Returned %d items in %.1f ms",
         len(items_step2),
         latency_step2,
-        session_id[:8],
     )
 
     scenario_metrics.append({
@@ -175,15 +173,16 @@ def run_benchmark(use_mock: bool = False):
     })
 
     # -------------------------------------------------------------------------
-    # STEP 3: Multi-turn Refinement with SQL Hard Constraints ("Màu trắng, dưới 1 triệu")
+    # STEP 3: One-shot image + text constraints
     # -------------------------------------------------------------------------
     t0 = time.perf_counter()
     resp_step3 = client.post(
         "/api/search",
         data={
-            "session_id": session_id,
-            "query_text": "Màu trắng, dưới 1 triệu",
+            "query_text": "Tìm giày giống ảnh, màu trắng, dưới 1 triệu",
+            "crop_box": json.dumps(crop_coords),
         },
+        files={"image": ("crop_outfit.jpg", outfit_bytes, "image/jpeg")},
     )
     t1 = time.perf_counter()
     latency_step3 = (t1 - t0) * 1000
@@ -194,7 +193,7 @@ def run_benchmark(use_mock: bool = False):
     items_step3 = search_data_step3["items"]
 
     logger.info(
-        "✓ Step 3 [Search Turn 2]: Merged state (Color: %s, MaxPrice: %s) in %.1f ms",
+        "✓ Step 3 [Image + Text]: Applied request constraints (Color: %s, MaxPrice: %s) in %.1f ms",
         state_step3.get("color"),
         state_step3.get("max_price"),
         latency_step3,
@@ -202,22 +201,21 @@ def run_benchmark(use_mock: bool = False):
 
     scenario_metrics.append({
         "step": 3,
-        "name": "Conversational Refinement (Hard Filters)",
-        "action": 'User refines: "Màu trắng, dưới 1 triệu"',
+        "name": "One-shot Image + Text Search",
+        "action": 'Image and full request: "Giày giống ảnh, màu trắng, dưới 1 triệu"',
         "latency_ms": round(latency_step3, 2),
         "gpu_allocated_mb": get_gpu_memory_mb()["allocated_mb"],
-        "details": f"Active chips: {len(state_step3.get('active_chips', []))}. Max price: {state_step3.get('max_price')}đ. Matches: {len(items_step3)}",
+        "details": f"Max price: {state_step3.get('max_price')}đ. Matches: {len(items_step3)}",
     })
 
     # -------------------------------------------------------------------------
-    # STEP 4: Negative Constraint & Reference Ordinal ("Giống số 1 nhưng thể thao hơn, không phải da")
+    # STEP 4: Independent negative-constraint text query
     # -------------------------------------------------------------------------
     t0 = time.perf_counter()
     resp_step4 = client.post(
         "/api/search",
         data={
-            "session_id": session_id,
-            "query_text": "Giống số 1 nhưng thể thao hơn, không phải da",
+            "query_text": "Tìm giày thể thao không phải da",
         },
     )
     t1 = time.perf_counter()
@@ -229,57 +227,52 @@ def run_benchmark(use_mock: bool = False):
     items_step4 = search_data_step4["items"]
 
     logger.info(
-        "✓ Step 4 [Search Turn 3]: Negative constraints applied (Excludes: %s) in %.1f ms",
+        "✓ Step 4 [Text Search]: Negative constraints applied (Excludes: %s) in %.1f ms",
         state_step4.get("exclude_materials"),
         latency_step4,
     )
 
     scenario_metrics.append({
         "step": 4,
-        "name": "Negative Constraint & Reference Query",
-        "action": 'User speaks: "Giống số 1 nhưng thể thao hơn, không phải da"',
+        "name": "Independent Negative Constraint Query",
+        "action": 'User searches: "Tìm giày thể thao không phải da"',
         "latency_ms": round(latency_step4, 2),
         "gpu_allocated_mb": get_gpu_memory_mb()["allocated_mb"],
         "details": f"Negative constraint [exclude_materials: da]. Penalty (-0.30) applied to leather products. Matches: {len(items_step4)}",
     })
 
     # -------------------------------------------------------------------------
-    # STEP 5: Interactive Constraint Chip Removal (DELETE /api/search/{session_id}/constraint)
+    # STEP 5: Independent visual-similar search from a product card
     # -------------------------------------------------------------------------
-    target_chip_id = None
-    for chip in state_step4.get("active_chips", []):
-        if "exclude_material" in chip.get("chip_type", "") or "da" in chip.get("label", "").lower():
-            target_chip_id = chip["chip_id"]
-            break
-    if not target_chip_id and state_step4.get("active_chips"):
-        target_chip_id = state_step4["active_chips"][0]["chip_id"]
+    reference_article_id = (
+        items_step2[0]["article_id"] if items_step2 else "0000000001"
+    )
 
     t0 = time.perf_counter()
-    resp_step5 = client.delete(
-        f"/api/search/{session_id}/constraint",
-        params={"chip_id": target_chip_id or "exclude_material:da"},
+    resp_step5 = client.post(
+        "/api/search",
+        data={"reference_article_id": reference_article_id},
     )
     t1 = time.perf_counter()
     latency_step5 = (t1 - t0) * 1000
 
     assert resp_step5.status_code == 200, f"Step 5 failed: {resp_step5.text}"
     search_data_step5 = resp_step5.json()
-    state_step5 = search_data_step5["search_state"]
     items_step5 = search_data_step5["items"]
 
     logger.info(
-        "✓ Step 5 [Interactive Delete Chip]: Removed '%s' in %.1f ms",
-        target_chip_id,
+        "✓ Step 5 [Product Reference]: Searched from '%s' in %.1f ms",
+        reference_article_id,
         latency_step5,
     )
 
     scenario_metrics.append({
         "step": 5,
-        "name": "Interactive Constraint Removal",
-        "action": f"User clicks [✕] on chip '{target_chip_id}' -> Instant re-rank",
+        "name": "Product Reference Search",
+        "action": f"User clicks tìm tương tự on product '{reference_article_id}'",
         "latency_ms": round(latency_step5, 2),
         "gpu_allocated_mb": get_gpu_memory_mb()["allocated_mb"],
-        "details": f"Chip removed. Candidate list re-ranked dynamically with {len(items_step5)} products.",
+        "details": f"Returned {len(items_step5)} visually similar products.",
     })
 
     # -------------------------------------------------------------------------
@@ -298,13 +291,13 @@ def run_benchmark(use_mock: bool = False):
     assert resp_transcribe.status_code == 200, f"Step 6 transcribe failed: {resp_transcribe.text}"
     transcript_text = resp_transcribe.json().get("text", "áo khoác gió màu đen")
 
-    # Follow-up search with transcribed voice text
+    # Independent search with transcribed voice text
     t2 = time.perf_counter()
     resp_step6 = client.post(
         "/api/search",
         data={
-            "session_id": session_id,
             "query_text": transcript_text,
+            "query_type": "voice",
         },
     )
     t3 = time.perf_counter()
@@ -322,7 +315,7 @@ def run_benchmark(use_mock: bool = False):
     scenario_metrics.append({
         "step": 6,
         "name": "Voice-to-Search Full Flow",
-        "action": f"Audio recorded -> Whisper transcribe -> Unified search ('{transcript_text}')",
+        "action": f"Audio recorded -> gpt-transcribe -> Independent search ('{transcript_text}')",
         "latency_ms": round(latency_step6, 2),
         "gpu_allocated_mb": get_gpu_memory_mb()["allocated_mb"],
         "details": f"Transcript text received: '{transcript_text}'. Total matches: {len(search_data_step6['items'])}",
@@ -365,7 +358,7 @@ def run_benchmark(use_mock: bool = False):
 
     logger.info("=" * 70)
     logger.info("PHASE 5 BENCHMARK COMPLETE:")
-    logger.info("  • Average Turn Latency: %.2f ms (Target: < 1000 ms) -> %s", avg_latency, summary["performance"]["latency_status"])
+    logger.info("  • Average Request Latency: %.2f ms (Target: < 1000 ms) -> %s", avg_latency, summary["performance"]["latency_status"])
     logger.info("  • Peak GPU VRAM: %.2f MB (Target: < 4096 MB) -> %s", peak_vram, summary["hardware"]["vram_status"])
     logger.info("  • Results exported to: %s", out_path)
     logger.info("=" * 70)

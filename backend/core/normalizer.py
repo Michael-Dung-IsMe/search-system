@@ -69,7 +69,9 @@ COLOR_NAME_BY_CODE: Dict[str, str] = {
 # User-facing Vietnamese/English synonyms mapped to the canonical dataset code/name.
 COLOR_CODE_MAP: Dict[str, Tuple[str, str]] = {
     "bạc": ("03", "Silver"), "silver": ("03", "Silver"),
-    "đồng": ("04", "Bronze/Copper"), "bronze": ("04", "Bronze/Copper"), "copper": ("04", "Bronze/Copper"),
+    # Bare "đồng" commonly follows a VND amount, so only the explicit
+    # Vietnamese color phrase is treated as bronze/copper.
+    "màu đồng": ("04", "Bronze/Copper"), "bronze": ("04", "Bronze/Copper"), "copper": ("04", "Bronze/Copper"),
     "xám nhạt": ("06", "Light Grey"), "ghi nhạt": ("06", "Light Grey"), "light grey": ("06", "Light Grey"), "light gray": ("06", "Light Grey"),
     "xám": ("07", "Grey"), "ghi": ("07", "Grey"), "grey": ("07", "Grey"), "gray": ("07", "Grey"),
     "xám đậm": ("08", "Dark Grey"), "ghi đậm": ("08", "Dark Grey"), "dark grey": ("08", "Dark Grey"), "dark gray": ("08", "Dark Grey"),

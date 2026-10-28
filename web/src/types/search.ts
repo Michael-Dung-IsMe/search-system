@@ -3,27 +3,7 @@
  * Strict contract-based models matching FastAPI Pydantic schemas.
  */
 
-export type ChipType =
-  | 'category'
-  | 'gender'
-  | 'color'
-  | 'price'
-  | 'material'
-  | 'exclude_color'
-  | 'exclude_material'
-  | 'reference';
-
-export interface ConstraintChip {
-  chip_id: string;
-  label: string;
-  chip_type: ChipType;
-  value: string | number | boolean;
-  is_removable: boolean;
-}
-
 export interface SearchState {
-  session_id: string;
-  turn_index: number;
   category?: string | null;
   gender?: string | null;
   color?: string | null;
@@ -35,7 +15,6 @@ export interface SearchState {
   exclude_colors: string[];
   exclude_materials: string[];
   reference_article_id?: string | null;
-  active_chips: ConstraintChip[];
 }
 
 export interface SearchResultItem {
@@ -57,8 +36,6 @@ export interface SearchResultItem {
 }
 
 export interface SearchResponse {
-  session_id: string;
-  turn_index: number;
   total_results: number;
   search_state: SearchState;
   items: SearchResultItem[];
@@ -67,6 +44,7 @@ export interface SearchResponse {
   similar_items: SearchResultItem[];
   message?: string | null;
   response_type?: 'search_results' | 'conversation';
+  query_type?: 'text' | 'image' | 'voice';
   latency_ms: number;
   query_id?: string;
 }
@@ -106,10 +84,8 @@ export interface ProductDetailResponse {
 
 export interface SearchQueryParams {
   query_text?: string;
-  session_id?: string;
   reference_article_id?: string;
   crop_box?: string; // JSON string of [ymin, xmin, ymax, xmax]
   image?: File | Blob;
-  query_id?: string;
   query_type?: 'text' | 'image' | 'voice';
 }

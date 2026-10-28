@@ -13,7 +13,7 @@ Image + Voice Audio + Text
            │
            ▼
 [GIAI ĐOẠN 1: TIẾP NHẬN & PHÂN NHÁNH ĐẦU VÀO]
-   ├─ Audio   ──► SpeechTranscriber (Whisper API) ──► Văn bản tiếng Việt
+   ├─ Audio   ──► SpeechTranscriber (OpenAI gpt-transcribe) ──► Văn bản tiếng Việt
    ├─ Ảnh Gốc ──► ObjectDetector (OWL-ViT FP16)   ──► Bounding Boxes & Polygons
    └─ Text    ──► Chuỗi mô tả người dùng
            │
@@ -23,10 +23,10 @@ Image + Voice Audio + Text
    └─ IntentExtractor (OpenAI gpt-4o-mini Structured JSON Outputs)
            │
            ▼
-[GIAI ĐOẠN 3: HỢP NHẤT Ý ĐỊNH & QUẢN LÝ TRẠNG THÁI (STATE MANAGER)]
-   ├─ Hợp nhất tiêu chí mới vào SearchState của phiên hiện tại (session_id)
+[GIAI ĐOẠN 3: TẠO SEARCHSTATE CHO REQUEST HIỆN TẠI]
+   ├─ Tạo mới SearchState từ QueryIntent, không kế thừa request trước
    ├─ Xử lý các điều kiện phủ định ("không phải da", "loại trừ màu đen")
-   └─ Đồng bộ hóa danh sách Constraint Chips hiển thị trên giao diện
+   └─ Gắn reference_article_id khi tìm từ một thẻ sản phẩm
            │
            ▼
 [GIAI ĐOẠN 4: TRÍCH XUẤT VECTOR NHÚNG HYBRID (HYBRID EMBEDDER)]
@@ -55,7 +55,7 @@ Image + Voice Audio + Text
 ## 2. Chi Tiết Từng Giai Đoạn
 
 ### Giai đoạn 1: Tiếp nhận & Phân nhánh đầu vào
-- **Nhánh Giọng nói**: Audio blob được gửi lên `POST /api/transcribe`, chuyển qua Whisper API với prompt thời trang chuyên ngành để tạo ra chuỗi text tiếng Việt.
+- **Nhánh Giọng nói**: Audio blob được gửi lên `POST /api/transcribe`, chuyển qua OpenAI `gpt-transcribe` với `language=vi` để tạo ra chuỗi text tiếng Việt.
 - **Nhánh Thị giác**: Ảnh phối đồ toàn thân được đưa qua `ObjectDetector.detect()`. Mô hình OWL-ViT phát hiện các thành phần trang phục kèm điểm tự tin (*confidence score*), trả về tọa độ chuẩn hóa và contour polygon.
 - **Nhánh Cắt ảnh**: Khi người dùng chọn một vùng món đồ, ảnh được crop theo tỷ lệ chuẩn hóa và lưu tạm vào `data/uploads/`.
 
@@ -66,12 +66,11 @@ Image + Voice Audio + Text
   - *chiệu $\rightarrow$ triệu*
 - **Trích xuất JSON cấu trúc**: `IntentExtractor` gọi OpenAI `gpt-4o-mini` với schema định sẵn để bóc tách thành đối tượng `QueryIntent`.
 
-### Giai đoạn 3: Hợp nhất ý định vào SearchState
-- `StateManager.merge_intent()` nhận `SearchState` hiện tại và `QueryIntent` mới:
-  - Cập nhật số thứ tự lượt truy vấn: `turn_index += 1`.
-  - Giữ lại các tiêu chí cũ không bị mâu thuẫn (ví dụ: đã chọn màu đen ở lượt 1, sang lượt 2 chỉ nói *"dưới 500k"* thì màu đen vẫn được giữ).
-  - Ghi đè nếu có tiêu chí mới đối nghịch (ví dụ: *"đổi sang màu trắng"* $\to$ `color = "White"`).
-  - Tự động sinh danh sách `ConstraintChip` hiển thị trên giao diện.
+### Giai đoạn 3: Tạo SearchState cho request
+- `/api/search` tạo một `SearchState` mới từ toàn bộ trường của `QueryIntent` hiện tại.
+- Không có `session_id`, `turn_index`, merge intent hoặc bộ nhớ vector theo phiên.
+- Ảnh và text cần kết hợp phải được gửi trong cùng request. Khi người dùng đổi facet, frontend ghép toàn bộ facet đang chọn thành một query hoàn chỉnh rồi gửi lại.
+- `search_audit.persist_search()` chỉ ghi lịch sử phục vụ audit; nó không làm trạng thái cho request sau.
 
 ### Giai đoạn 4: Trích xuất vector nhúng Hybrid (Dual-space Embedding)
 Hệ thống phân tách luồng trích xuất vector theo phương thức đầu vào để tối ưu hóa đặc thù ngữ nghĩa và thị giác:

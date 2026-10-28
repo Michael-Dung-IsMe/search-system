@@ -8,9 +8,9 @@
 ## 2. Cài để làm gì?
 - Kiểm thử toàn diện 14 Domain Classes trong `backend/domain/models.py`.
 - Kiểm thử thuật toán phân tầng (Phase 1: Stratified Sampling & Vector Ingestion).
-- Kiểm thử các cỗ máy lõi AI (Phase 2: EntityNormalizer, IntentExtractor, StateManager, CandidateRetriever, SoftReranker).
-- Kiểm thử các Endpoint API qua `fastapi.testclient.TestClient` (Phase 3: `/api/detect`, `/api/transcribe`, `/api/search`, `/api/search/{sid}/constraint`, `/api/products/{id}`).
-- Kiểm thử toàn trình End-to-End đa lượt tương tác (Phase 5: từ ảnh outfit $\to$ trích xuất hộp $\to$ crop $\to$ refine bằng text/giọng nói $\to$ gỡ chip).
+- Kiểm thử các cỗ máy lõi AI (Phase 2: EntityNormalizer, IntentExtractor, CandidateRetriever, SoftReranker, Search Audit).
+- Kiểm thử các endpoint API qua `fastapi.testclient.TestClient` (Phase 3: `/api/detect`, `/api/transcribe`, `/api/search`, `/api/products/{id}`).
+- Kiểm thử End-to-End các request độc lập: detect, image + text, voice và CSV fallback.
 - Đo lường và thực thi quy chuẩn bắt buộc: **Tỷ lệ bao phủ mã nguồn (Code Coverage) > 80%**.
 
 ## 3. Vì sao chọn & Phương án thay thế (Trade-offs)
@@ -26,19 +26,19 @@
 |---|---|:---:|---|
 | `tests/test_domain_models.py` | 14 Domain Classes (Customer, Product, Order, SearchQuery...) | 5 | [test_domain_models.py](../../../../tests/test_domain_models.py) |
 | `tests/test_phase1_db_and_index.py` | Stratified Sampling, Giá VND, Schema SQL DDL contracts | 29 | [test_phase1_db_and_index.py](../../../../tests/test_phase1_db_and_index.py) |
-| `tests/test_phase2_core_engine.py` | Normalizer, IntentExtractor, StateManager, Retriever, Reranker | 23 | [test_phase2_core_engine.py](../../../../tests/test_phase2_core_engine.py) |
+| `tests/test_phase2_core_engine.py` | Normalizer, IntentExtractor, Search Audit, Retriever, Reranker | - | [test_phase2_core_engine.py](../../../../tests/test_phase2_core_engine.py) |
 | `tests/test_phase3_api.py` | 5 REST endpoints, Exception Handlers, Mock DB, File uploads | 29 | [test_phase3_api.py](../../../../tests/test_phase3_api.py) |
-| `tests/test_phase5_e2e.py` | Kịch bản luồng đa phương thức tương tác 5 lượt hoàn chỉnh | 7 | [test_phase5_e2e.py](../../../../tests/test_phase5_e2e.py) |
+| `tests/test_phase5_e2e.py` | Image + text, voice, request độc lập và fallback | - | [test_phase5_e2e.py](../../../../tests/test_phase5_e2e.py) |
 
 ## 5. Trạng thái thực tế
-- **Mức độ tích hợp:** Toàn bộ **93/93 test cases** đều đang PASS 100%.
+- **Mức độ tích hợp:** Chạy lệnh bên dưới để lấy số lượng và trạng thái hiện tại; không ghi cứng số test vào tài liệu.
 - **Lệnh thực thi toàn bộ test suite:**
   ```powershell
-  D:\miniconda3\envs\httt-search-system\python.exe -m pytest tests/
+  .venv\Scripts\python.exe -m pytest -q
   ```
 - **Lệnh kiểm tra tỷ lệ bao phủ mã nguồn (Coverage):**
   ```powershell
-  D:\miniconda3\envs\httt-search-system\python.exe -m pytest --cov=backend tests/
+  .venv\Scripts\python.exe -m pytest --cov=backend tests/
   ```
 
 ## 6. Lưu ý kỹ thuật & Hiệu năng

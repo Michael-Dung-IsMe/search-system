@@ -25,7 +25,6 @@
 | `web/src/components/SearchBar.tsx` | `Search`, `Mic`, `MicOff`, `Camera`, `Loader2` | [SearchBar.tsx](../../../../web/src/components/SearchBar.tsx) |
 | `web/src/components/ObjectSelectModal.tsx` | `X`, `Crop`, `Check`, `RotateCcw`, `Scan` | [ObjectSelectModal.tsx](../../../../web/src/components/ObjectSelectModal.tsx) |
 | `web/src/components/ProductCard.tsx` | `Sparkles`, `Tag`, `ChevronRight` | [ProductCard.tsx](../../../../web/src/components/ProductCard.tsx) |
-| `web/src/components/StateChipsBar.tsx` | `X`, `SlidersHorizontal` | [StateChipsBar.tsx](../../../../web/src/components/StateChipsBar.tsx) |
 
 ## 5. Trạng thái thực tế
 - **Mức độ tích hợp:** Hoạt động chính thức trên 100% các components cần hiển thị biểu tượng trực quan.

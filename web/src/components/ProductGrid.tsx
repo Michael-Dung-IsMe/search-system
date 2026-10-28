@@ -12,6 +12,7 @@ interface ProductGridProps {
   hasExactMatch?: boolean;
   message?: string | null;
   responseType?: 'search_results' | 'conversation';
+  showImageSimilarity?: boolean;
   isLoading?: boolean;
   onFindSimilar: (articleId: string, prodName: string) => void;
   onProductClick?: (item: SearchResultItem) => void;
@@ -24,6 +25,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
   hasExactMatch = true,
   message,
   responseType = 'search_results',
+  showImageSimilarity = false,
   isLoading = false,
   onFindSimilar,
   onProductClick,
@@ -110,6 +112,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
             <ProductCard
               key={item.article_id}
               item={item}
+              showImageSimilarity={showImageSimilarity}
               onFindSimilar={onFindSimilar}
               onClick={onProductClick}
             />
@@ -137,6 +140,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
             <ProductCard
               key={item.article_id}
               item={item}
+              showImageSimilarity={showImageSimilarity}
               onFindSimilar={onFindSimilar}
               onClick={onProductClick}
             />
@@ -162,6 +166,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
               <ProductCard
                 key={item.article_id}
                 item={item}
+                showImageSimilarity={showImageSimilarity}
                 onFindSimilar={onFindSimilar}
                 onClick={onProductClick}
               />

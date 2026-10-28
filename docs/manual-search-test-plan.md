@@ -1,360 +1,106 @@
-# Kịch bản kiểm thử thủ công module Search
+# Kịch bản kiểm thử tay cho module Search
 
-## 1. Mục tiêu
+Mục tiêu là đánh giá chất lượng intent, hard filter, vector retrieval, multimodal search và cách frontend hiển thị kết quả. Mỗi thao tác tìm kiếm là một request độc lập; request sau không được kế thừa điều kiện request trước.
 
-Tài liệu này dùng để đánh giá riêng từng tầng của hệ thống tìm kiếm:
+## Cách quan sát
 
-1. Hiểu ý định và chuẩn hóa câu tiếng Việt.
-2. Áp dụng bộ lọc category, gender, color, price và điều kiện loại trừ.
-3. Duy trì trạng thái qua nhiều lượt hội thoại.
-4. Nhận diện trang phục bằng OWL-ViT.
-5. Tìm ảnh tương tự bằng FashionSigLIP.
-6. Truy vấn pgvector và hiển thị ảnh sản phẩm.
-7. Xử lý lỗi, hiệu năng và tính ổn định.
+Mở backend bằng Uvicorn và theo dõi:
 
-## 2. Điều kiện trước khi test
+- `intent_extractor`: JSON intent sau LLM và backend reconciliation.
+- `retriever`: số kết quả Phase 1/Phase 2 và ngưỡng similarity.
+- HTTP status của `/api/search`.
+- Tab Network của trình duyệt: `search_state`, `query_type`, `match_type`, `final_score`.
 
-- PostgreSQL Docker ở trạng thái `healthy`.
-- Backend chạy tại `http://127.0.0.1:8000`.
-- Frontend chạy tại `http://localhost:3000`.
-- Endpoint `http://127.0.0.1:8000/health` trả về `status: ok`.
-- Database có 1.000 sản phẩm, 1.000 `image_embedding` và 1.000 `text_embedding`.
-- Ảnh chuẩn dùng để test: `data/images/0220094020.jpg`.
-- Đóng tab trình duyệt cũ hoặc tải lại trang trước mỗi nhóm test độc lập.
+Ghi cho mỗi case: input, intent thực tế, số exact/similar result, top 5 sản phẩm, thời gian và nhận xét.
 
-Ghi lại cho mỗi case:
+## Text search
 
-- Kết quả thực tế.
-- Thời gian phản hồi.
-- Số sản phẩm trả về.
-- Các chip điều kiện xuất hiện.
-- Sản phẩm đầu tiên.
-- Ảnh chụp màn hình hoặc log backend nếu lỗi.
+| ID | Input | Kỳ vọng |
+|---|---|---|
+| T01 | `Tìm quần màu hồng` | Category `Pants`; chỉ Trousers/Shorts; không có giày hồng |
+| T02 | `Tìm quần short màu trắng dưới 1 triệu` | `Shorts`, `White`, `max_price=1000000` |
+| T03 | `Tìm quần đùi ngắn màu đen` | Nhận dạng `Shorts` |
+| T04 | `Tìm quần dài màu xanh` | Nhận dạng `Trousers` |
+| T05 | `Tìm áo sơ mi có giá 199.000 đồng` | Không hiểu “đồng” thành màu Bronze/Copper |
+| T06 | `Tìm áo đen nhưng không phải len` | Có màu Black và loại trừ wool/knit phù hợp mapping |
+| T07 | `Tìm giày thể thao nữ dưới 800k` | Category giày cụ thể, `Ladieswear`, đúng giá |
+| T08 | `Xin chào, bạn có khỏe không?` | `response_type=conversation`, không trả sản phẩm |
+| T09 | `Xin chào, tìm giúp tôi áo khoác đen` | `product_search`, không bị phân loại thành chat |
+| T10 | `Tìm sản phẩm màu cầu vồng` | Không bịa color code không có trong taxonomy |
 
-## 3. Kịch bản tìm kiếm văn bản
+## Request độc lập
 
-### TC-TXT-01: Tìm theo loại sản phẩm
+Thực hiện liên tiếp:
 
-**Thao tác:** nhập `áo thun` và bấm tìm kiếm.
+1. `Tìm áo sơ mi trắng dưới 500k`.
+2. `Tìm quần đen`.
 
-**Kết quả mong đợi:**
+Kỳ vọng request thứ hai:
 
-- Không xuất hiện lỗi giao diện hoặc HTTP 500.
-- Trạng thái tìm kiếm nhận diện category là `T-shirt`.
-- Kết quả chủ yếu thuộc loại `T-shirt`.
-- Có chip thể hiện loại sản phẩm.
+- Category chỉ là quần.
+- Color là Black.
+- `max_price` là `null`.
+- Request/response không có `session_id`, `turn_index` hoặc `active_chips`.
+- Không có thanh `Tinh chỉnh thêm` ở cuối màn hình.
 
-**Dấu hiệu lỗi:** category sai là lỗi Intent/Normalizer; category đúng nhưng sản phẩm sai là lỗi Retriever hoặc dữ liệu category.
+## Voice search
 
-### TC-TXT-02: Kết hợp loại và màu
+| ID | Nội dung nói | Kỳ vọng |
+|---|---|---|
+| V01 | `Tìm áo sơ mi trắng dưới năm trăm nghìn` | Transcript đúng; intent đúng category, màu và giá |
+| V02 | `Tìm quần đùi màu hồng` | `Shorts`, không phải `Trousers` |
+| V03 | `Giới thiệu cho tôi một số mẫu áo` | Product search, không phải chitchat |
+| V04 | Nói nhỏ, có tiếng ồn nền | Ghi nhận transcript và lỗi nhận dạng thực tế |
 
-**Thao tác:** nhập `váy màu đen`.
+Response của search sau transcription phải có `query_type=voice`. Ghi âm tự dừng sau tối đa 20 giây.
 
-**Kết quả mong đợi:**
+## Image search
 
-- Category là `Dress`.
-- Color là `Black`.
-- Kết quả chính xác phải là váy đen; nếu không đủ kết quả, hệ thống ghi rõ đang hiển thị sản phẩm tương tự.
-- Ảnh của từng sản phẩm tải thành công.
+| ID | Input | Kỳ vọng |
+|---|---|---|
+| I01 | Ảnh chỉ có một chiếc quần | Detector khoanh vùng quần; search dùng `image_embedding` |
+| I02 | Outfit có áo và quần | Hiện nhiều box, có thể chọn từng vật thể |
+| I03 | Ảnh áo hoodie | Box có thể chỉ ghi nhãn chung “Áo”; category catalog chi tiết được suy từ image neighbors |
+| I04 | Ảnh hỏng hoặc không phải ảnh | HTTP 400 và thông báo rõ ràng |
+| I05 | Ảnh sản phẩm gần giống một ảnh catalog | Top results có image similarity hợp lý |
 
-### TC-TXT-03: Kết hợp giới tính và giá
+Phần trăm cạnh bounding box là confidence của OWL-ViT. Nhãn `% khớp ảnh` trên product card chỉ được hiện khi `query_type=image`.
 
-**Thao tác:** nhập `quần tây nam dưới 1 triệu`.
+## Image + text
 
-**Kết quả mong đợi:**
+| ID | Ảnh | Text trong cùng lần gửi | Kỳ vọng |
+|---|---|---|---|
+| M01 | Quần dài đen | `quần này màu trắng dưới 1 triệu` | Dùng ảnh cho hình dáng; lọc White và giá |
+| M02 | Quần dài | `tìm quần short giống chiếc này, màu hồng` | Category cụ thể `Shorts` từ text ghi đè suy luận ảnh |
+| M03 | Quần short | `quần này màu xanh` | Text chung không ép `Trousers`; ảnh hỗ trợ suy `Shorts` |
+| M04 | Outfit nhiều món | Chọn box áo + `màu trắng` | Chỉ crop áo rồi áp điều kiện White |
 
-- Category là `Trousers`.
-- Gender là `Menswear`.
-- `max_price` là `1.000.000`.
-- Không sản phẩm nào trong danh sách chính có giá lớn hơn 1.000.000 đồng.
-- Không sản phẩm nào có gender khác `Menswear`.
+Ảnh và text phải cùng nằm trong một request `/api/search`. Không gửi text ở request sau với kỳ vọng backend nhớ ảnh trước.
 
-### TC-TXT-04: Chuẩn hóa màu phức hợp
+## Facet sidebar
 
-**Thao tác:** nhập `áo thun xanh navy`.
+1. Tìm `áo thun trắng dưới 500k`.
+2. Chọn màu hồng trong sidebar.
+3. Mở tab Network và xem request mới.
 
-**Kết quả mong đợi:**
+Kỳ vọng `query_text` mới chứa đầy đủ category, màu hồng và mức giá. Bỏ một facet khiến frontend gửi lại toàn bộ các facet còn lại.
 
-- Màu được chuẩn hóa thành `Dark Blue`, không phải `Blue` chung chung.
-- Kết quả ưu tiên áo thun màu xanh đậm.
+## Phase 1 và Phase 2
 
-### TC-TXT-05: Chuẩn hóa lỗi phát âm/phương ngữ
+- Chọn query có sản phẩm khớp metadata để xác nhận log `Phase 1: Found ...`.
+- Chọn tổ hợp màu/giá không tồn tại để xác nhận Phase 2 chạy.
+- Category phải được giữ khi relaxation; `quần màu hồng` không được nới sang giày màu hồng.
+- Kết quả dưới ngưỡng text `0.58` hoặc image `0.65` không được đưa vào Phase 2.
 
-**Thao tác:** nhập `dày da nam dưới 1 chiệu`.
+## Tiêu chí phát hiện vấn đề
 
-**Kết quả mong đợi:**
-
-- `dày` được hiểu là `giày`.
-- `chiệu` được hiểu là `triệu`.
-- Gender là `Menswear`.
-- Giá tối đa là 1.000.000 đồng.
-- Không được crash dù không có đủ sản phẩm phù hợp.
-
-### TC-TXT-06: Điều kiện loại trừ
-
-**Thao tác:** nhập `giày sneaker trắng dưới 1 triệu, không phải da, không màu đen`.
-
-**Kết quả mong đợi:**
-
-- Category là `Sneakers`, color là `White`.
-- Có chip loại trừ `leather` và `Black`.
-- Không kết quả chính xác nào vi phạm giá tối đa.
-- Không kết quả chính xác nào có màu đen.
-
-### TC-TXT-07: Truy vấn không có kết quả
-
-**Thao tác:** nhập `giày nữ dưới 100 nghìn`.
-
-**Kết quả mong đợi:**
-
-- Không xuất hiện HTTP 500 hoặc trang trắng.
-- Hệ thống hiển thị thông báo không có kết quả hoặc khu vực gợi ý tương tự.
-- Không được âm thầm bỏ điều kiện giá rồi coi sản phẩm đắt hơn là kết quả chính xác.
-
-### TC-TXT-08: Truy vấn không được hỗ trợ bởi dataset
-
-**Thao tác:** nhập `đồng hồ đeo tay`.
-
-**Kết quả mong đợi:**
-
-- Không crash.
-- Hệ thống không gán sai thành áo, quần, váy hoặc giày.
-- Nếu trả về semantic recommendation, giao diện phải phân biệt đây là kết quả tương tự.
-
-Lưu ý: bộ 1.000 sản phẩm hiện tại không có nhóm túi/balo, nên không dùng `balo` làm tiêu chí bắt buộc phải có kết quả.
-
-## 4. Kịch bản hội thoại nhiều lượt
-
-### TC-CONV-01: Tích lũy điều kiện
-
-Chạy liên tiếp trong cùng một tab và cùng phiên:
-
-1. `áo thun nam`
-2. `màu trắng`
-3. `dưới 1 triệu`
-4. `không phải da`
-
-**Kết quả mong đợi:**
-
-- `turn_index` tăng sau mỗi lượt.
-- Sau lượt 2 vẫn giữ `T-shirt` và `Menswear`.
-- Sau lượt 3 vẫn giữ loại, giới tính, màu và thêm giá tối đa.
-- Sau lượt 4 có thêm `leather` trong danh sách loại trừ.
-- Chip trên giao diện phản ánh đầy đủ trạng thái hiện tại.
-
-### TC-CONV-02: Xóa chip điều kiện
-
-**Điều kiện:** thực hiện xong TC-CONV-01.
-
-**Thao tác:** bấm dấu `X` trên chip `Không chất liệu: leather`.
-
-**Kết quả mong đợi:**
-
-- Chip biến mất.
-- Điều kiện `exclude_materials` không còn `leather`.
-- Hệ thống tự truy vấn lại kết quả.
-- Các điều kiện khác vẫn được giữ nguyên.
-
-### TC-CONV-03: Thay đổi điều kiện đang có
-
-Chạy liên tiếp:
-
-1. `váy màu đen`
-2. `đổi sang màu trắng`
-
-**Kết quả mong đợi:**
-
-- Category `Dress` vẫn được giữ.
-- Color cuối cùng là `White`.
-- Không tồn tại đồng thời hai chip màu mâu thuẫn.
-
-### TC-CONV-04: Tham chiếu theo thứ tự
-
-Chạy liên tiếp:
-
-1. `giày sneaker`
-2. Quan sát và ghi lại sản phẩm thứ nhất.
-3. Nhập `giống số 1 nhưng dưới 1 triệu`.
-
-**Kết quả mong đợi:**
-
-- `reference_article_id` bằng mã sản phẩm đứng thứ nhất ở lượt trước.
-- Có chip tham chiếu sản phẩm.
-- Điều kiện giá tối đa được áp dụng.
-- Nếu lượt trước không có kết quả, hệ thống phải xử lý an toàn và không crash.
-
-### TC-CONV-05: Cô lập session
-
-**Thao tác:**
-
-1. Tab A tìm `váy nữ màu đen`.
-2. Mở tab B mới và tìm `quần nam`.
-
-**Kết quả mong đợi:** điều kiện của tab A không xuất hiện trong tab B.
-
-## 5. Kịch bản tìm kiếm bằng ảnh
-
-### TC-IMG-01: Nhận diện đối tượng
-
-**Thao tác:** upload `data/images/0220094020.jpg`.
-
-**Kết quả mong đợi:**
-
-- API `/api/detect` trả HTTP 200.
-- Có ít nhất một bounding box hợp lệ.
-- Với checkpoint hiện tại, ảnh chuẩn đã từng được nhận diện là `Skirt` với score khoảng `0.577`; score có thể dao động nhẹ.
-- Bounding box nằm đúng trên sản phẩm, không nằm ngoài ảnh.
-
-**Dấu hiệu lỗi:** không có box hoặc box sai nghiêm trọng là vấn đề OWL-ViT, threshold hoặc tiền xử lý ảnh.
-
-### TC-IMG-02: Tìm lại chính ảnh catalog
-
-**Thao tác:** chọn vùng sản phẩm trong ảnh chuẩn rồi thực hiện tìm kiếm.
-
-**Kết quả mong đợi:**
-
-- Truy vấn được đánh dấu là loại `image`.
-- Có kết quả trả về.
-- Sản phẩm `0220094020` hoặc sản phẩm rất giống phải nằm gần đầu danh sách.
-- Điểm tương đồng không bị âm hoặc lớn hơn 1.
-
-**Dấu hiệu lỗi:** ảnh catalog không xuất hiện gần đầu thường cho thấy vector query và vector database khác model, khác preprocessing hoặc sai ánh xạ article ID.
-
-### TC-IMG-03: Ảnh outfit có nhiều món
-
-**Thao tác:** upload ảnh người có ít nhất áo và quần hoặc váy và giày.
-
-**Kết quả mong đợi:**
-
-- OWL-ViT trả nhiều vùng độc lập nếu các món nhìn rõ.
-- Chọn vùng nào thì kết quả phải tương ứng với vùng đó.
-- Không dùng toàn bộ outfit khi người dùng đã chọn một crop cụ thể.
-
-### TC-IMG-04: File không hợp lệ
-
-**Thao tác:** thử upload file `.txt` hoặc một file ảnh hỏng.
-
-**Kết quả mong đợi:**
-
-- File sai định dạng trả lỗi 400.
-- Giao diện hiển thị thông báo dễ hiểu.
-- Backend không dừng và các truy vấn sau vẫn hoạt động.
-
-### TC-IMG-05: Cache nhận diện
-
-**Thao tác:** upload cùng một ảnh hai lần liên tiếp và ghi thời gian.
-
-**Kết quả mong đợi:** lần thứ hai nhanh hơn đáng kể do cache theo MD5 trong bộ nhớ. Nếu lần hai vẫn chậm như lần đầu, kiểm tra singleton và cache detector.
-
-## 6. Kịch bản hiển thị và API sản phẩm
-
-### TC-UI-01: Hiển thị ảnh sản phẩm
-
-**Thao tác:** mở kết quả bất kỳ và quan sát toàn bộ ảnh trong danh sách.
-
-**Kết quả mong đợi:**
-
-- Không có ảnh vỡ hoặc HTTP 404.
-- URL có dạng `http://localhost:8000/images/<article_id>.jpg`.
-- Ảnh đúng với mã và tên sản phẩm.
-
-### TC-UI-02: Chi tiết sản phẩm
-
-**Thao tác:** mở một sản phẩm từ kết quả.
-
-**Kết quả mong đợi:** mã sản phẩm, tên, giá, gender, category, mô tả và ảnh khớp với card đã chọn.
-
-### TC-API-01: Mã sản phẩm không tồn tại
-
-Mở `http://localhost:8000/api/products/9999999999`.
-
-**Kết quả mong đợi:** trả HTTP 404 có JSON lỗi; không trả HTTP 500.
-
-## 7. Kịch bản giọng nói
-
-### TC-VOICE-01: Câu tiếng Việt rõ ràng
-
-**Thao tác:** nói `Tìm áo thun nam màu trắng dưới một triệu`.
-
-**Kết quả mong đợi:**
-
-- Whisper trả transcript gần đúng nội dung đã nói.
-- Transcript được đưa vào cùng pipeline tìm kiếm text.
-- State nhận diện đúng category, gender, color và giá.
-
-Nếu lỗi chỉ xảy ra ở bước transcript, kiểm tra `OPENAI_API_KEY`, microphone, định dạng audio và endpoint `/api/transcribe`; không quy lỗi cho Retriever.
-
-## 8. Hiệu năng
-
-### TC-PERF-01: Cold start
-
-1. Khởi động lại backend.
-2. Thực hiện truy vấn text đầu tiên.
-3. Upload ảnh lần đầu.
-
-**Ngưỡng tham khảo khi chạy CPU:**
-
-- Text đầu tiên: nên hoàn thành trong 30 giây.
-- Nhận diện ảnh đầu tiên: nên hoàn thành trong 30 giây.
-- Không được hết RAM hoặc làm backend tự tắt.
-
-### TC-PERF-02: Warm request
-
-Lặp lại đúng truy vấn và ảnh của TC-PERF-01.
-
-**Kết quả mong đợi:** nhanh hơn lần đầu. Nếu mọi request đều mất trên 20–30 giây, kiểm tra model singleton, cache và việc model có bị nạp lại ở mỗi request hay không.
-
-## 9. Bảng chẩn đoán nhanh
-
-| Triệu chứng | Tầng cần kiểm tra đầu tiên |
+| Hiện tượng | Khu vực kiểm tra |
 |---|---|
-| Chip/category/color sai ngay sau khi nhập | `IntentExtractor`, `EntityNormalizer` |
-| State đúng nhưng sản phẩm vi phạm gender/giá | `CandidateRetriever`, SQL filter |
-| State đúng, không có kết quả dù dữ liệu chắc chắn tồn tại | Ngưỡng similarity, không gian embedding, pgvector |
-| Text search rất kém nhưng image search tốt | Text embedding hoặc mô tả sản phẩm |
-| Image search không đưa chính ảnh catalog lên gần đầu | FashionSigLIP, preprocessing, vector index |
-| Không phát hiện hoặc crop sai món đồ | OWL-ViT, score threshold, tọa độ box |
-| Sản phẩm đúng nhưng ảnh 404 | `image_path`, thư mục `data/images`, static mount |
-| Lượt sau làm mất điều kiện lượt trước | `StateManager`, `session_id` |
-| `giống số 1` trỏ sai sản phẩm | `SESSION_PREVIOUS_RESULTS`, reference ordinal |
-| Lần nào cũng nạp model lại | Singleton hoặc vòng đời process Uvicorn |
-| Chỉ voice lỗi | Whisper API, audio MIME, API key |
-| Backend trả kết quả nhưng frontend không hiển thị | Mapping response frontend, CORS, tên field schema |
-
-## 10. Mẫu ghi nhận kết quả
-
-| Test ID | Trạng thái | Thời gian | Số kết quả | Kết quả thực tế / lỗi | Mức độ |
-|---|---|---:|---:|---|---|
-| TC-TXT-01 | Chưa chạy |  |  |  |  |
-| TC-TXT-02 | Chưa chạy |  |  |  |  |
-| TC-TXT-03 | Chưa chạy |  |  |  |  |
-| TC-TXT-04 | Chưa chạy |  |  |  |  |
-| TC-TXT-05 | Chưa chạy |  |  |  |  |
-| TC-TXT-06 | Chưa chạy |  |  |  |  |
-| TC-TXT-07 | Chưa chạy |  |  |  |  |
-| TC-TXT-08 | Chưa chạy |  |  |  |  |
-| TC-CONV-01 | Chưa chạy |  |  |  |  |
-| TC-CONV-02 | Chưa chạy |  |  |  |  |
-| TC-CONV-03 | Chưa chạy |  |  |  |  |
-| TC-CONV-04 | Chưa chạy |  |  |  |  |
-| TC-CONV-05 | Chưa chạy |  |  |  |  |
-| TC-IMG-01 | Chưa chạy |  |  |  |  |
-| TC-IMG-02 | Chưa chạy |  |  |  |  |
-| TC-IMG-03 | Chưa chạy |  |  |  |  |
-| TC-IMG-04 | Chưa chạy |  |  |  |  |
-| TC-IMG-05 | Chưa chạy |  |  |  |  |
-| TC-UI-01 | Chưa chạy |  |  |  |  |
-| TC-UI-02 | Chưa chạy |  |  |  |  |
-| TC-API-01 | Chưa chạy |  |  |  |  |
-| TC-VOICE-01 | Chưa chạy |  |  |  |  |
-| TC-PERF-01 | Chưa chạy |  |  |  |  |
-| TC-PERF-02 | Chưa chạy |  |  |  |  |
-
-## 11. Phân loại mức độ lỗi
-
-- **Blocker:** backend không khởi động, database mất dữ liệu, toàn bộ search không dùng được.
-- **Critical:** text search hoặc image search luôn lỗi; bộ lọc giá/gender trả kết quả sai nghiêm trọng.
-- **Major:** một nhóm truy vấn, hội thoại hoặc nhận diện ảnh hoạt động sai nhưng còn đường khác sử dụng được.
-- **Minor:** lỗi thông báo, chip, ảnh phụ, sắp xếp hoặc hiệu năng chưa tốt.
-- **Cosmetic:** lỗi giao diện không ảnh hưởng kết quả và thao tác.
-
+| Intent sai dù từ xuất hiện rõ trong câu | `extractor.py`, `normalizer.py` |
+| Intent đúng nhưng sai loại sản phẩm | `retriever.py`, taxonomy trong DB |
+| Image category sai | image neighbors, vector catalog, `detector.py` |
+| Thứ tự kết quả thiếu hợp lý | `reranker.py` và chất lượng vector |
+| Request sau giữ điều kiện cũ | `page.tsx` hoặc API contract; backend không được có session cache |
+| Facet làm mất các facet khác | `buildFacetQuery()` trong `page.tsx` |
+| Text/voice hiện `% khớp ảnh` | `query_type`, `ProductGrid.tsx`, `ProductCard.tsx` |
+| Kết quả lạ khi DB lỗi | CSV fallback và dataset `data/sample_articles.csv` |

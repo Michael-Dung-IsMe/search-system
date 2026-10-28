@@ -78,7 +78,7 @@ export async function transcribeAudio(
 }
 
 /**
- * Execute unified multimodal conversational search via POST /api/search
+ * Execute one independent multimodal search via POST /api/search
  */
 export async function searchProducts(
   params: SearchQueryParams
@@ -87,9 +87,6 @@ export async function searchProducts(
 
   if (params.query_text) {
     formData.append('query_text', params.query_text);
-  }
-  if (params.session_id) {
-    formData.append('session_id', params.session_id);
   }
   if (params.reference_article_id) {
     formData.append('reference_article_id', params.reference_article_id);
@@ -100,30 +97,13 @@ export async function searchProducts(
   if (params.image) {
     formData.append('image', params.image);
   }
-  if (params.query_id) {
-    formData.append('query_id', params.query_id);
+  if (params.query_type) {
+    formData.append('query_type', params.query_type);
   }
 
   const res = await fetch(`${API_BASE_URL}/api/search`, {
     method: 'POST',
     body: formData,
-  });
-
-  return handleResponse<SearchResponse>(res);
-}
-
-/**
- * Remove an active constraint chip via DELETE /api/search/{session_id}/constraint
- */
-export async function deleteConstraint(
-  sessionId: string,
-  chipId: string
-): Promise<SearchResponse> {
-  const url = new URL(`${API_BASE_URL}/api/search/${encodeURIComponent(sessionId)}/constraint`);
-  url.searchParams.append('chip_id', chipId);
-
-  const res = await fetch(url.toString(), {
-    method: 'DELETE',
   });
 
   return handleResponse<SearchResponse>(res);

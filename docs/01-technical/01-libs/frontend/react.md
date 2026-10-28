@@ -9,7 +9,7 @@
 - Quản lý trạng thái tìm kiếm cục bộ và phản ứng tức thì (`useState`, `useReducer`).
 - Đồng bộ hóa hiệu ứng và vòng đời thành phần (`useEffect`, `useCallback`).
 - Tương tác trực tiếp với DOM phần tử HTML5 Canvas phục vụ vẽ bounding box và crop ảnh (`useRef`).
-- Render cây thành phần gồm 11 module UI linh hoạt: SearchBar, ObjectSelectModal, StateChipsBar, FacetSidebar, ProductGrid,...
+- Render các module UI chính: SearchBar, ObjectSelectModal, ImageAnalysisBar, FacetSidebar, ProductGrid và ProductCard.
 
 ## 3. Vì sao chọn & Phương án thay thế (Trade-offs)
 - **Lý do lựa chọn:**

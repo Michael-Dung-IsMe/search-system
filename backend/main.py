@@ -27,7 +27,7 @@ logger = logging.getLogger("api_main")
 
 app = FastAPI(
     title="Interactive Multimodal Shopping Search Engine API",
-    description="Backend API for Object-aware Multimodal Search, Conversational Refinements, and Explainable Reranking.",
+    description="Backend API for object-aware multimodal search and explainable reranking.",
     version="1.0.0",
 )
 

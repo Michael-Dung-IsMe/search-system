@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Header } from '@/components/Header';
 import { SearchBar } from '@/components/SearchBar';
 import { ProductGrid } from '@/components/ProductGrid';
-import { StickyRefineBar } from '@/components/StickyRefineBar';
 import { ObjectSelectModal } from '@/components/ObjectSelectModal';
 import { ImageAnalysisBar } from '@/components/ImageAnalysisBar';
 import { FacetSidebar, FacetFilterState } from '@/components/FacetSidebar';
 import { RecommendedPills } from '@/components/RecommendedPills';
 import {
-  deleteConstraint,
   detectObjects,
   searchProducts,
   transcribeAudio,
@@ -18,7 +16,6 @@ import {
 import {
   DetectedBox,
   SearchResultItem,
-  SearchState,
 } from '@/types/search';
 import { AlertCircle, Flame } from 'lucide-react';
 
@@ -46,16 +43,16 @@ const TRENDING_SEARCHES = [
 ];
 
 export default function Home() {
-  const [sessionId, setSessionId] = useState<string>('');
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [queryText, setQueryText] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [searchState, setSearchState] = useState<SearchState | null>(null);
   const [items, setItems] = useState<SearchResultItem[]>([]);
   const [exactItems, setExactItems] = useState<SearchResultItem[]>([]);
   const [similarItems, setSimilarItems] = useState<SearchResultItem[]>([]);
   const [hasExactMatch, setHasExactMatch] = useState<boolean>(true);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [responseType, setResponseType] = useState<'search_results' | 'conversation'>('search_results');
+  const [queryType, setQueryType] = useState<'text' | 'image' | 'voice'>('text');
   const [totalResults, setTotalResults] = useState<number>(0);
   const [latencyMs, setLatencyMs] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -75,18 +72,6 @@ export default function Home() {
   const [isAnalyzingImage, setIsAnalyzingImage] = useState<boolean>(false);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
 
-  // Sync facet filters when searchState changes from backend
-  useEffect(() => {
-    if (searchState) {
-      setFacetFilters({
-        category: searchState.category || null,
-        color: searchState.color || null,
-        minPrice: searchState.min_price || null,
-        maxPrice: searchState.max_price || null,
-      });
-    }
-  }, [searchState]);
-
   // 1. Unified Search Handler
   const executeSearch = useCallback(
     async (params: {
@@ -94,7 +79,7 @@ export default function Home() {
       image?: File;
       cropBoxCoords?: [number, number, number, number] | null;
       referenceId?: string;
-      isNewSession?: boolean;
+      queryType?: 'text' | 'image' | 'voice';
     }) => {
       setIsProcessing(true);
       setErrorMessage(null);
@@ -113,24 +98,28 @@ export default function Home() {
           textToSend = queryText || undefined;
         }
 
-        const sidToSend = params.isNewSession ? undefined : (sessionId || undefined);
-
         const res = await searchProducts({
           query_text: textToSend,
-          session_id: sidToSend,
           reference_article_id: params.referenceId,
           image: params.image,
           crop_box: cropBoxJson,
+          query_type: params.queryType,
         });
 
-        setSessionId(res.session_id);
-        setSearchState(res.search_state);
+        setHasSearched(true);
+        setFacetFilters({
+          category: res.search_state.category || null,
+          color: res.search_state.color || null,
+          minPrice: res.search_state.min_price || null,
+          maxPrice: res.search_state.max_price || null,
+        });
         setItems(res.items || []);
         setExactItems(res.exact_items || []);
         setSimilarItems(res.similar_items || []);
         setHasExactMatch(res.has_exact_match !== undefined ? res.has_exact_match : true);
         setSearchMessage(res.message || null);
         setResponseType(res.response_type || 'search_results');
+        setQueryType(res.query_type || 'text');
         setTotalResults(res.total_results);
         setLatencyMs(res.latency_ms);
       } catch (err: unknown) {
@@ -141,7 +130,7 @@ export default function Home() {
         setIsProcessing(false);
       }
     },
-    [queryText, sessionId]
+    [queryText]
   );
 
   // 2. Voice Input Handler
@@ -152,7 +141,7 @@ export default function Home() {
       const res = await transcribeAudio(audioBlob, 'voice_query.webm');
       if (res.text) {
         setQueryText(res.text);
-        await executeSearch({ text: res.text, isNewSession: true });
+        await executeSearch({ text: res.text, queryType: 'voice' });
       }
     } catch (err: unknown) {
       console.error('Voice transcription failed:', err);
@@ -165,7 +154,6 @@ export default function Home() {
   // 3. Image Upload
   const handleImageSelected = async (file: File) => {
     setQueryText('');
-    setSearchState(null);
     setSelectedImageFile(file);
     setSelectedBoxId(null);
     setDetectedBoxes([]);
@@ -174,7 +162,7 @@ export default function Home() {
     executeSearch({
       image: file,
       text: undefined,
-      isNewSession: true,
+      queryType: 'image',
     });
 
     try {
@@ -207,7 +195,12 @@ export default function Home() {
     setSelectedBoxId(null);
     setIsAnalyzingImage(false);
     if (queryText) {
-      executeSearch({ text: queryText, isNewSession: true });
+      executeSearch({ text: queryText });
+    } else {
+      setHasSearched(false);
+      setItems([]);
+      setExactItems([]);
+      setSimilarItems([]);
     }
   };
 
@@ -233,120 +226,76 @@ export default function Home() {
     });
   };
 
-  // 7. Remove single constraint chip
-  const handleRemoveChip = async (chipId: string) => {
-    if (!sessionId) return;
-    setIsProcessing(true);
-    setErrorMessage(null);
-
-    try {
-      const res = await deleteConstraint(sessionId, chipId);
-      setSearchState(res.search_state);
-      setItems(res.items || []);
-      setExactItems(res.exact_items || []);
-      setSimilarItems(res.similar_items || []);
-      setHasExactMatch(res.has_exact_match !== undefined ? res.has_exact_match : true);
-      setSearchMessage(res.message || null);
-      setResponseType(res.response_type || 'search_results');
-      setTotalResults(res.total_results);
-      setLatencyMs(res.latency_ms);
-    } catch (err: unknown) {
-      console.error('Failed to remove constraint:', err);
-      const msg = err instanceof Error ? err.message : 'Lỗi khi gỡ bộ lọc';
-      setErrorMessage(msg);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 8. Clear all chips / filters
-  const handleClearAllChips = async () => {
-    if (!searchState?.active_chips || !sessionId) return;
-    for (const chip of searchState.active_chips) {
-      if (chip.is_removable) {
-        await handleRemoveChip(chip.chip_id);
-      }
-    }
-  };
-
-  // 9. Visual Similar Search on Card
+  // 7. Visual Similar Search on Card
   const handleFindSimilar = (articleId: string, prodName: string) => {
+    setQueryText(`Sản phẩm tương tự ${prodName}`);
     executeSearch({
       referenceId: articleId,
-      text: `Tìm sản phẩm tương tự "${prodName}"`,
+      text: undefined,
+      queryType: 'image',
     });
   };
 
-  // 10. Sticky Refine Submit
-  const handleRefine = (text: string) => {
-    executeSearch({ text });
-  };
-
-  // 11. Handle Recommended Pills selection
-  const handleSelectRecommendedCategory = (category: string) => {
-    if (!category) {
-      const chip = searchState?.active_chips?.find((c) => c.chip_type === 'category');
-      if (chip) handleRemoveChip(chip.chip_id);
-    } else {
-      executeSearch({ text: `loại ${category}` });
+  const buildFacetQuery = (filters: FacetFilterState): string => {
+    const parts: string[] = [];
+    if (filters.category) parts.push(`loại ${filters.category}`);
+    if (filters.color) parts.push(`màu ${filters.color}`);
+    if (filters.minPrice && filters.maxPrice) {
+      parts.push(`giá từ ${filters.minPrice} đến ${filters.maxPrice} đồng`);
+    } else if (filters.maxPrice) {
+      parts.push(`giá dưới ${filters.maxPrice} đồng`);
+    } else if (filters.minPrice) {
+      parts.push(`giá trên ${filters.minPrice} đồng`);
     }
+    return parts.join(', ');
   };
 
-  // 12. Handle Facet Sidebar Filter Changes
+  const searchWithFacets = (filters: FacetFilterState) => {
+    const text = buildFacetQuery(filters);
+    if (!text && !selectedImageFile) {
+      setHasSearched(false);
+      setItems([]);
+      setExactItems([]);
+      setSimilarItems([]);
+      setTotalResults(0);
+      return;
+    }
+    executeSearch({
+      text: text || undefined,
+      image: selectedImageFile || undefined,
+      queryType: selectedImageFile ? 'image' : 'text',
+    });
+  };
+
+  // 8. Category shortcuts send a complete, independent filter request.
+  const handleSelectRecommendedCategory = (category: string) => {
+    const nextFilters = { ...facetFilters, category: category || null };
+    setFacetFilters(nextFilters);
+    searchWithFacets(nextFilters);
+  };
+
+  // 9. Sidebar always submits all selected filters in one request.
   const handleFacetFilterChange = (newFilters: FacetFilterState) => {
     setFacetFilters(newFilters);
-
-    if (newFilters.category !== facetFilters.category) {
-      if (newFilters.category) {
-        executeSearch({ text: `loại ${newFilters.category}` });
-      } else {
-        const chip = searchState?.active_chips?.find((c) => c.chip_type === 'category');
-        if (chip) handleRemoveChip(chip.chip_id);
-      }
-      return;
-    }
-
-    if (newFilters.color !== facetFilters.color) {
-      if (newFilters.color) {
-        executeSearch({ text: `màu ${newFilters.color}` });
-      } else {
-        const chip = searchState?.active_chips?.find((c) => c.chip_type === 'color');
-        if (chip) handleRemoveChip(chip.chip_id);
-      }
-      return;
-    }
-
-    if (newFilters.minPrice !== facetFilters.minPrice || newFilters.maxPrice !== facetFilters.maxPrice) {
-      if (newFilters.minPrice && newFilters.maxPrice) {
-        executeSearch({ text: `giá từ ${Math.round(newFilters.minPrice / 1000)}k đến ${Math.round(newFilters.maxPrice / 1000)}k` });
-      } else if (newFilters.maxPrice) {
-        executeSearch({ text: `giá dưới ${Math.round(newFilters.maxPrice / 1000)}k` });
-      } else if (newFilters.minPrice) {
-        executeSearch({ text: `giá trên ${Math.round(newFilters.minPrice / 1000)}k` });
-      } else {
-        const minChip = searchState?.active_chips?.find((c) => c.chip_id.startsWith('min_price:'));
-        const maxChip = searchState?.active_chips?.find((c) => c.chip_id.startsWith('max_price:'));
-        if (minChip) handleRemoveChip(minChip.chip_id);
-        if (maxChip) handleRemoveChip(maxChip.chip_id);
-      }
-    }
+    searchWithFacets(newFilters);
   };
 
-  const handleResetFilters = async () => {
-    setFacetFilters({ category: null, minPrice: null, maxPrice: null, color: null });
-    await handleClearAllChips();
+  const handleResetFilters = () => {
+    const emptyFilters = { category: null, minPrice: null, maxPrice: null, color: null };
+    setFacetFilters(emptyFilters);
+    searchWithFacets(emptyFilters);
   };
 
   const handleTrendingClick = (term: string) => {
     setQueryText(term);
-    executeSearch({ text: term, isNewSession: true });
+    executeSearch({ text: term });
   };
 
   // Determine whether we are in initial state or active results state
-  const isInitialState = !sessionId && items.length === 0 && !isProcessing && !selectedImageFile;
+  const isInitialState = !hasSearched && !selectedImageFile;
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-[#111827] flex flex-col pb-28">
+    <div className="min-h-screen bg-[#fafafa] text-[#111827] flex flex-col">
       <Header />
 
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6 flex-1">
@@ -383,7 +332,7 @@ export default function Home() {
               <SearchBar
                 value={queryText}
                 onChange={setQueryText}
-                onSearch={(text) => executeSearch({ text, isNewSession: true })}
+                onSearch={(text) => executeSearch({ text })}
                 onImageSelected={handleImageSelected}
                 onVoiceRecorded={handleVoiceRecorded}
                 isProcessing={isProcessing}
@@ -488,6 +437,7 @@ export default function Home() {
                   hasExactMatch={hasExactMatch}
                   message={searchMessage}
                   responseType={responseType}
+                  showImageSimilarity={queryType === 'image'}
                   isLoading={isProcessing && items.length === 0 && exactItems.length === 0}
                   onFindSimilar={handleFindSimilar}
                 />
@@ -496,15 +446,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-      {/* Sticky Bottom Conversational Refine Bar (Only displayed in results state) */}
-      {!isInitialState && (
-        <StickyRefineBar
-          onRefine={handleRefine}
-          isProcessing={isProcessing}
-          placeholder="Nhập tinh chỉnh: 'Đổi sang màu đen', 'Rẻ hơn nữa', 'Không lấy chất liệu da'..."
-        />
-      )}
 
       {/* Interactive Object Bounding Box Modal for Outfit Photos */}
       <ObjectSelectModal

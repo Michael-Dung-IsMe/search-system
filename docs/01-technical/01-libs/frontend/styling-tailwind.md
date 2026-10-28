@@ -24,8 +24,6 @@
 |---|---|---|
 | `web/src/app/globals.css` | Khai báo chỉ thị `@import "tailwindcss";` và biến màu sắc toàn cục | [globals.css](../../../../web/src/app/globals.css) |
 | `web/src/components/ProductCard.tsx` | Styling thẻ sản phẩm, tỷ lệ khung hình ảnh thời trang (`aspect-[3/4]`), badge điểm khớp | [ProductCard.tsx](../../../../web/src/components/ProductCard.tsx) |
-| `web/src/components/StateChipsBar.tsx` | Styling các chip bộ lọc có nút gỡ bỏ `[✕]` | [StateChipsBar.tsx](../../../../web/src/components/StateChipsBar.tsx) |
-| `web/src/components/StickyRefineBar.tsx` | Styling thanh tìm kiếm dính ở chân trang (`fixed bottom-6 z-40`) | [StickyRefineBar.tsx](../../../../web/src/components/StickyRefineBar.tsx) |
 
 ## 5. Trạng thái thực tế
 - **Mức độ tích hợp:** Hoạt động chính thức trên toàn bộ giao diện `web/`.

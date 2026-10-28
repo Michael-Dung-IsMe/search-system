@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Mic, Search } from 'lucide-react';
 
+const VOICE_RECORDING_SECONDS = 20;
+
 interface SearchBarProps {
   value: string;
   onChange: (val: string) => void;
@@ -23,7 +25,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   placeholder = 'Mô tả phong cách, tải ảnh outfit hoặc nói yêu cầu...',
 }) => {
   const [isListening, setIsListening] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(VOICE_RECORDING_SECONDS);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -42,7 +44,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     setIsListening(false);
   };
 
-  // Start recording with 5s countdown
+  // Start recording with a 20-second countdown
   const startRecording = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -71,9 +73,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 
       recorder.start();
       setIsListening(true);
-      setCountdown(5);
+      setCountdown(VOICE_RECORDING_SECONDS);
 
-      let timeLeft = 5;
+      let timeLeft = VOICE_RECORDING_SECONDS;
       countdownTimerRef.current = setInterval(() => {
         timeLeft -= 1;
         setCountdown(timeLeft);
@@ -143,7 +145,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           <button
             type="button"
             onClick={handleVoiceToggle}
-            title={isListening ? 'Bấm để dừng ghi âm' : 'Tìm bằng giọng nói (5s tự ngắt)'}
+            title={isListening ? 'Bấm để dừng ghi âm' : 'Tìm bằng giọng nói (20s tự ngắt)'}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
               isListening
                 ? 'bg-red-50 text-red-600 border border-red-300 animate-bounce'
@@ -182,7 +184,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         </div>
       </div>
 
-      {/* Voice Status Bar with 5s countdown */}
+      {/* Voice Status Bar with 20-second countdown */}
       {isListening && (
         <div className="flex items-center justify-between px-4 py-2 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs sm:text-sm animate-fade-in">
           <div className="flex items-center gap-2">

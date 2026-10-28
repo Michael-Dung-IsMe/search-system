@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Interactive Multimodal Shopping Search Engine API",
-    "description": "Backend API for Object-aware Multimodal Search, Conversational Refinements, and Explainable Reranking.",
+    "description": "Backend API for object-aware multimodal search and explainable reranking.",
     "version": "1.0.0"
   },
   "paths": {
@@ -74,7 +74,7 @@
           "search"
         ],
         "summary": "Transcribe Audio",
-        "description": "Transcribes an audio blob query into Vietnamese text using Whisper.",
+        "description": "Transcribes a completed audio query into Vietnamese text.",
         "operationId": "transcribe_audio_api_transcribe_post",
         "requestBody": {
           "content": {
@@ -116,7 +116,7 @@
           "search"
         ],
         "summary": "Search Products",
-        "description": "Unified Multimodal Conversational Search endpoint.",
+        "description": "Execute one self-contained text, image, voice, or image+text search.",
         "operationId": "search_products_api_search_post",
         "requestBody": {
           "content": {
@@ -127,60 +127,6 @@
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/search/{session_id}/constraint": {
-      "delete": {
-        "tags": [
-          "search"
-        ],
-        "summary": "Delete Constraint",
-        "description": "Removes an active constraint chip and re-evaluates ranking immediately.",
-        "operationId": "delete_constraint_api_search__session_id__constraint_delete",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Session Id"
-            }
-          },
-          {
-            "name": "chip_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "The chip_id to remove, e.g. 'color:Black'",
-              "title": "Chip Id"
-            },
-            "description": "The chip_id to remove, e.g. 'color:Black'"
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -278,17 +224,6 @@
             ],
             "title": "Query Text"
           },
-          "session_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Session Id"
-          },
           "reference_article_id": {
             "anyOf": [
               {
@@ -352,53 +287,6 @@
         ],
         "title": "Body_transcribe_audio_api_transcribe_post"
       },
-      "ConstraintChip": {
-        "properties": {
-          "chip_id": {
-            "type": "string",
-            "title": "Chip Id",
-            "description": "Unique identifier for the chip, e.g. 'color:10' or 'price:1000000'"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label",
-            "description": "Human-readable label, e.g. 'Màu: Trắng' or 'Tối đa: 1.000.000đ'"
-          },
-          "chip_type": {
-            "type": "string",
-            "enum": [
-              "category",
-              "gender",
-              "color",
-              "price",
-              "material",
-              "exclude_color",
-              "exclude_material",
-              "reference"
-            ],
-            "title": "Chip Type"
-          },
-          "value": {
-            "title": "Value",
-            "description": "Underlying value represented by the chip"
-          },
-          "is_removable": {
-            "type": "boolean",
-            "title": "Is Removable",
-            "description": "Whether the user can click [x] to remove this chip",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "chip_id",
-          "label",
-          "chip_type",
-          "value"
-        ],
-        "title": "ConstraintChip",
-        "description": "Represents an active interactive filter chip shown in the UI."
-      },
       "DetectResponse": {
         "properties": {
           "image_hash": {
@@ -436,7 +324,7 @@
           "label": {
             "type": "string",
             "title": "Label",
-            "description": "Canonical garment label (e.g., Top, Pants, Shoes, Bag, Dress)"
+            "description": "Coarse garment-region label, e.g. UpperGarment, Pants, Skirt, Dress, Shoes"
           },
           "score": {
             "type": "number",
@@ -563,14 +451,6 @@
       },
       "SearchResponse": {
         "properties": {
-          "session_id": {
-            "type": "string",
-            "title": "Session Id"
-          },
-          "turn_index": {
-            "type": "integer",
-            "title": "Turn Index"
-          },
           "total_results": {
             "type": "integer",
             "title": "Total Results"
@@ -630,12 +510,29 @@
               }
             ],
             "title": "Message"
+          },
+          "response_type": {
+            "type": "string",
+            "enum": [
+              "search_results",
+              "conversation"
+            ],
+            "title": "Response Type",
+            "default": "search_results"
+          },
+          "query_type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "voice"
+            ],
+            "title": "Query Type",
+            "default": "text"
           }
         },
         "type": "object",
         "required": [
-          "session_id",
-          "turn_index",
           "total_results",
           "search_state",
           "items"
@@ -743,16 +640,6 @@
       },
       "SearchState": {
         "properties": {
-          "session_id": {
-            "type": "string",
-            "title": "Session Id"
-          },
-          "turn_index": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Turn Index",
-            "default": 0
-          },
           "category": {
             "anyOf": [
               {
@@ -865,18 +752,11 @@
               }
             ],
             "title": "Reference Article Id"
-          },
-          "active_chips": {
-            "items": {
-              "$ref": "#/components/schemas/ConstraintChip"
-            },
-            "type": "array",
-            "title": "Active Chips"
           }
         },
         "type": "object",
         "title": "SearchState",
-        "description": "Unified conversational search state maintained across multi-turn interactions."
+        "description": "Structured constraints for one independent search request."
       },
       "TranscribeResponse": {
         "properties": {
