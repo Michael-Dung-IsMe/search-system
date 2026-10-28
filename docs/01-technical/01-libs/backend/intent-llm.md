@@ -33,7 +33,7 @@
 | File mã nguồn | Vai trò / Logic cụ thể | Đường dẫn trực tiếp |
 |---|---|---|
 | `backend/core/extractor.py` | Class `IntentExtractor`, hàm `extract()`, `_extract_with_openai()`, `_extract_with_rules()` | [extractor.py](../../../../backend/core/extractor.py) |
-| `backend/routes/search_routes.py` | Bóc tách ý định người dùng và đưa vào StateManager tại bước 4 của `/api/search` | [search_routes.py](../../../../backend/routes/search_routes.py#L193-L200) |
+| `backend/routes/search_routes.py` | Bóc tách ý định và tạo `SearchState` mới cho request `/api/search` | [search_routes.py](../../../../backend/routes/search_routes.py) |
 
 ## 5. Trạng thái thực tế
 - **Mức độ tích hợp:** Hoạt động chính thức.

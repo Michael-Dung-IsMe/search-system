@@ -58,6 +58,24 @@ describe('ProductCard Component', () => {
     expect(handleClick).toHaveBeenCalledTimes(1);
     expect(handleClick).toHaveBeenCalledWith(mockProduct);
   });
+
+  test('shows image similarity only for image-ranked results', () => {
+    const { rerender } = render(
+      <ProductCard item={mockProduct} onFindSimilar={jest.fn()} />
+    );
+
+    expect(screen.queryByText('92% khớp ảnh')).not.toBeInTheDocument();
+
+    rerender(
+      <ProductCard
+        item={mockProduct}
+        onFindSimilar={jest.fn()}
+        showImageSimilarity={true}
+      />
+    );
+
+    expect(screen.getByText('92% khớp ảnh')).toBeInTheDocument();
+  });
 });
 
 describe('ProductGrid Component', () => {

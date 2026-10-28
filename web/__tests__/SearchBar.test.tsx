@@ -61,7 +61,7 @@ describe('SearchBar Component', () => {
     expect(handleImageSelected).toHaveBeenCalledWith(file);
   });
 
-  test('handles voice toggle and starts 5s countdown when MediaRecorder is mocked', async () => {
+  test('handles voice toggle and starts 20s countdown when MediaRecorder is mocked', async () => {
     // Mock navigator.mediaDevices.getUserMedia
     const mockStream = {
       getTracks: jest.fn().mockReturnValue([{ stop: jest.fn() }]),
@@ -98,7 +98,7 @@ describe('SearchBar Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Đang lắng nghe giọng nói của bạn/i)).toBeInTheDocument();
-      expect(screen.getByText('5s')).toBeInTheDocument();
+      expect(screen.getByText('20s')).toBeInTheDocument();
     });
 
     // Click again to stop

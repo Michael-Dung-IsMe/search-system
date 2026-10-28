@@ -5,18 +5,8 @@ Defines strict type models adhering to the project's contract-based design.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
-from uuid import UUID, uuid4
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
-
-
-class ConstraintChip(BaseModel):
-    """Represents an active interactive filter chip shown in the UI."""
-    chip_id: str = Field(..., description="Unique identifier for the chip, e.g. 'color:10' or 'price:1000000'")
-    label: str = Field(..., description="Human-readable label, e.g. 'Màu: Trắng' or 'Tối đa: 1.000.000đ'")
-    chip_type: Literal["category", "gender", "color", "price", "material", "exclude_color", "exclude_material", "reference"]
-    value: Any = Field(..., description="Underlying value represented by the chip")
-    is_removable: bool = Field(True, description="Whether the user can click [x] to remove this chip")
 
 
 class QueryIntent(BaseModel):
@@ -37,13 +27,10 @@ class QueryIntent(BaseModel):
     purpose: Optional[str] = Field(None, description="Usage purpose, e.g., 'chạy bộ', 'đi làm'")
     exclude_colors: List[str] = Field(default_factory=list, description="Negative constraint: unwanted colors")
     exclude_materials: List[str] = Field(default_factory=list, description="Negative constraint: unwanted materials")
-    reference_ordinal: Optional[int] = Field(None, ge=1, description="Index reference like 'giống số 1', 'chiếc thứ 2'")
 
 
 class SearchState(BaseModel):
-    """Unified conversational search state maintained across multi-turn interactions."""
-    session_id: str = Field(default_factory=lambda: str(uuid4()))
-    turn_index: int = Field(0, ge=0)
+    """Structured constraints for one independent search request."""
     category: Optional[str] = None
     gender: Optional[str] = None
     color: Optional[str] = None
@@ -55,7 +42,6 @@ class SearchState(BaseModel):
     exclude_colors: List[str] = Field(default_factory=list)
     exclude_materials: List[str] = Field(default_factory=list)
     reference_article_id: Optional[str] = None
-    active_chips: List[ConstraintChip] = Field(default_factory=list)
 
 
 class SearchResultItem(BaseModel):
@@ -79,8 +65,6 @@ class SearchResultItem(BaseModel):
 
 class SearchResponse(BaseModel):
     """Standardized search response returned to clients."""
-    session_id: str
-    turn_index: int
     total_results: int
     search_state: SearchState
     items: List[SearchResultItem]
@@ -91,3 +75,4 @@ class SearchResponse(BaseModel):
     similar_items: List[SearchResultItem] = Field(default_factory=list)
     message: Optional[str] = None
     response_type: Literal["search_results", "conversation"] = "search_results"
+    query_type: Literal["text", "image", "voice"] = "text"

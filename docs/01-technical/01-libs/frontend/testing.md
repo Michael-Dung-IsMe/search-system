@@ -29,7 +29,6 @@
 | `web/__tests__/SearchBar.test.tsx` | Nhập text, voice recording, file input trigger | [SearchBar.test.tsx](../../../../web/__tests__/SearchBar.test.tsx) |
 | `web/__tests__/ObjectSelectModal.test.tsx` | Render Canvas, click chọn bounding box, nút crop xác nhận | [ObjectSelectModal.test.tsx](../../../../web/__tests__/ObjectSelectModal.test.tsx) |
 | `web/__tests__/ProductCard.test.tsx` | Hiển thị thông tin sản phẩm, giá VND, nhãn giải thích | [ProductCard.test.tsx](../../../../web/__tests__/ProductCard.test.tsx) |
-| `web/__tests__/StateChipsBar.test.tsx` | Render chip đang kích hoạt, click nút [✕] gỡ bỏ | [StateChipsBar.test.tsx](../../../../web/__tests__/StateChipsBar.test.tsx) |
 | `web/__tests__/api.test.ts` | Gọi 5 endpoint REST API, xử lý lỗi `ApiError` | [api.test.ts](../../../../web/__tests__/api.test.ts) |
 | `web/__tests__/page.test.tsx` | Tích hợp toàn diện luồng tìm kiếm trên trang chủ | [page.test.tsx](../../../../web/__tests__/page.test.tsx) |
 

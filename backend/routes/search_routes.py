@@ -1,7 +1,7 @@
 """Search API Router.
 
-Exposes REST endpoints for Object Detection, Speech Transcription,
-Multimodal Conversational Search, Interactive Constraint Chips, and Product Details.
+Exposes REST endpoints for object detection, speech transcription,
+independent multimodal searches, and product details.
 """
 
 from __future__ import annotations
@@ -12,37 +12,30 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from PIL import Image
 
 from backend.core.detector import ObjectDetector
 from backend.core.embedder import MultimodalEmbedder
-from backend.core.extractor import IntentExtractor
+from backend.core.extractor import IntentExtractor, build_canonical_query
 from backend.core.normalizer import EntityNormalizer
 from backend.core.reranker import SoftReranker
 from backend.core.retriever import CandidateRetriever
-from backend.core.state_manager import StateManager
+from backend.core.search_audit import persist_search
 from backend.core.transcriber import SpeechTranscriber
 from backend.db.connection import get_db_connection
 from backend.schemas.api import (
-    DeleteConstraintRequest,
     DetectResponse,
     ProductDetailResponse,
     TranscribeResponse,
 )
-from backend.schemas.state import QueryIntent, SearchResponse, SearchResultItem, SearchState
+from backend.schemas.state import SearchResponse, SearchResultItem, SearchState
 
 logger = logging.getLogger("search_routes")
 router = APIRouter(prefix="/api", tags=["search"])
-
-# In-memory session state storage for fast interactive updates
-SESSION_STATES: Dict[str, SearchState] = {}
-SESSION_PREVIOUS_RESULTS: Dict[str, List[str]] = {}
-SESSION_QUERY_VECTORS: Dict[str, Any] = {}
-SESSION_QUERY_TYPES: Dict[str, str] = {}
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 ALLOWED_AUDIO_TYPES = {
@@ -133,27 +126,21 @@ async def transcribe_audio(file: UploadFile = File(...)) -> TranscribeResponse:
 @router.post("/search", response_model=SearchResponse)
 async def search_products(
     query_text: Optional[str] = Form(None),
-    session_id: Optional[str] = Form(None),
     reference_article_id: Optional[str] = Form(None),
     crop_box: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     query_type: Optional[str] = Form(None),
 ) -> SearchResponse:
-    """Unified Multimodal Conversational Search endpoint."""
+    """Execute one self-contained text, image, voice, or image+text search."""
     start_time = time.time()
-
-    # 1. Resolve or create SearchState session
-    sid = session_id or str(uuid4())
-    state = SESSION_STATES.get(sid, SearchState(session_id=sid))
-    previous_results = SESSION_PREVIOUS_RESULTS.get(sid, [])
-
-    active_query_type = query_type or SESSION_QUERY_TYPES.get(sid, "text")
-    query_vector = SESSION_QUERY_VECTORS.get(sid)
+    state = SearchState(reference_article_id=reference_article_id)
+    active_query_type = query_type or "text"
+    query_vector = None
     crop_image_path = None
     image_was_uploaded = False
     explicit_category_override: Optional[str] = None
 
-    # 2. Process uploaded image or crop box
+    # 1. Process an uploaded image or selected crop.
     if image is not None:
         img_bytes = await image.read()
         if img_bytes:
@@ -170,7 +157,7 @@ async def search_products(
                         logger.warning("Invalid crop_box JSON format: %s", crop_box)
 
                 # Save uploaded crop
-                crop_filename = f"{sid}_turn_{state.turn_index + 1}.jpg"
+                crop_filename = f"{uuid4()}.jpg"
                 crop_file_path = UPLOAD_DIR / crop_filename
                 pil_img.save(crop_file_path, format="JPEG")
                 crop_image_path = str(crop_file_path)
@@ -180,8 +167,6 @@ async def search_products(
                 query_vector = embedder.encode_image(pil_img)
                 active_query_type = "image"
                 image_was_uploaded = True
-                SESSION_QUERY_VECTORS[sid] = query_vector
-                SESSION_QUERY_TYPES[sid] = active_query_type
 
             except Exception as e:
                 logger.error("Failed to process uploaded image: %s", e)
@@ -190,10 +175,8 @@ async def search_products(
                     detail=f"Invalid image content: {str(e)}",
                 )
 
-    # 3. Process direct reference article
+    # 2. A product-reference search reuses that product's image embedding.
     if reference_article_id:
-        state.reference_article_id = reference_article_id
-        # Try fetching article visual embedding from database
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -209,12 +192,11 @@ async def search_products(
                             raw_vec = json.loads(raw_vec)
                         query_vector = np.array(raw_vec, dtype=np.float32)
                         active_query_type = "image"
-                        SESSION_QUERY_VECTORS[sid] = query_vector
-                        SESSION_QUERY_TYPES[sid] = active_query_type
         except Exception as e:
             logger.warning("Could not fetch reference embedding from DB (%s), using embedder fallback.", e)
 
-    # 4. Process natural text query through Intent Extractor & State Manager
+    # 3. Extract all constraints for this request. Nothing is inherited from
+    # an earlier request.
     extracted_intent = None
     if query_text and query_text.strip():
         extractor = IntentExtractor()
@@ -234,7 +216,6 @@ async def search_products(
                 )
             else:
                 extracted_intent.category = None
-                state.category = None
                 logger.info(
                     "Multimodal category | source=image_pending | ignored_llm_guess=true"
                 )
@@ -242,7 +223,19 @@ async def search_products(
         if image_was_uploaded or reference_article_id:
             extracted_intent.intent_type = "product_search"
 
-        state = StateManager.merge_intent(state, extracted_intent, previous_results)
+        state = SearchState(
+            category=extracted_intent.category,
+            gender=extracted_intent.gender,
+            color=extracted_intent.color,
+            min_price=extracted_intent.min_price,
+            max_price=extracted_intent.max_price,
+            material=extracted_intent.material,
+            style=extracted_intent.style,
+            purpose=extracted_intent.purpose,
+            exclude_colors=list(extracted_intent.exclude_colors),
+            exclude_materials=list(extracted_intent.exclude_materials),
+            reference_article_id=reference_article_id,
+        )
 
         if extracted_intent.intent_type == "conversation":
             latency = int((time.time() - start_time) * 1000)
@@ -250,14 +243,11 @@ async def search_products(
                 "Xin chào! Tôi là trợ lý tìm kiếm thời trang. "
                 "Bạn có thể mô tả loại áo, quần, váy hoặc giày mà bạn muốn tìm."
             )
-            SESSION_STATES[sid] = state
             logger.info(
                 "Conversation-only query skipped product retrieval | query=%r",
                 query_text,
             )
             return SearchResponse(
-                session_id=sid,
-                turn_index=state.turn_index,
                 total_results=0,
                 search_state=state,
                 items=[],
@@ -266,23 +256,18 @@ async def search_products(
                 similar_items=[],
                 message=message,
                 response_type="conversation",
+                query_type=active_query_type,
                 latency_ms=latency,
             )
 
-        # If no visual vector yet, compute text query vector
-        if query_vector is None or image is None:
+        # Keep an image/reference vector for multimodal search. Text embedding
+        # is only needed when the request has no visual input.
+        if query_vector is None:
             embedder = MultimodalEmbedder.get_instance()
             query_vector = embedder.encode_text(extracted_intent.normalized_query or query_text)
-            if not query_type:
-                active_query_type = "text"
-            SESSION_QUERY_VECTORS[sid] = query_vector
-            SESSION_QUERY_TYPES[sid] = active_query_type
+            active_query_type = query_type or "text"
 
-    elif image_was_uploaded:
-        # A newly uploaded image replaces any stale category from the session.
-        state.category = None
-
-    # 5. Retrieve partitioned candidates (Exact Matches vs Similar Recommendations)
+    # 4. Retrieve exact matches and controlled-relaxation recommendations.
     exact_candidates: List[SearchResultItem] = []
     similar_candidates: List[SearchResultItem] = []
     query_id = None
@@ -303,7 +288,6 @@ async def search_products(
                     )
                     if inferred_category:
                         state.category = inferred_category
-                        state.active_chips = StateManager.generate_chips(state)
                         logger.info(
                             "Multimodal category | source=image_neighbors | category=%s | confidence=%.2f",
                             inferred_category,
@@ -326,7 +310,43 @@ async def search_products(
                 limit=50,
             )
 
-            # 6. Apply multi-signal soft reranker to both partitions
+            # Try the user's normalized wording first. Only an empty text/voice
+            # result triggers a second retrieval using stable catalog terms
+            # assembled from the structured LLM intent.
+            if (
+                not exact_candidates
+                and not similar_candidates
+                and extracted_intent is not None
+                and active_query_type in ("text", "voice")
+                and not image_was_uploaded
+                and not reference_article_id
+            ):
+                canonical_query = build_canonical_query(extracted_intent)
+                raw_embedding_query = (
+                    extracted_intent.normalized_query or query_text or ""
+                ).strip()
+                if (
+                    canonical_query
+                    and canonical_query.casefold() != raw_embedding_query.casefold()
+                ):
+                    logger.info(
+                        "Raw text retrieval returned no candidates; retrying canonical query | raw=%r | canonical=%r",
+                        raw_embedding_query,
+                        canonical_query,
+                    )
+                    embedder = MultimodalEmbedder.get_instance()
+                    query_vector = embedder.encode_text(canonical_query)
+                    exact_candidates, similar_candidates = (
+                        CandidateRetriever.retrieve_partitioned(
+                            conn=conn,
+                            state=state,
+                            query_vector=query_vector,
+                            query_type=active_query_type,
+                            limit=50,
+                        )
+                    )
+
+            # 5. Apply the multi-signal soft reranker to both partitions.
             reranked_exact = SoftReranker.rerank(exact_candidates, state)
             reranked_similar = SoftReranker.rerank(similar_candidates, state)
 
@@ -335,12 +355,11 @@ async def search_products(
             if not has_exact_match:
                 message = "Không tìm thấy sản phẩm khớp chính xác với tiêu chí của bạn. Dưới đây là các sản phẩm tương tự."
 
-            # Combined items for persistence and backwards compatibility
             all_displayed = reranked_exact if has_exact_match else reranked_similar
 
-            # 7. Persist turn audit log and search_result records
+            # 6. Persist this independent search for audit/analytics.
             latency = int((time.time() - start_time) * 1000)
-            query_id = StateManager.persist_turn(
+            query_id = persist_search(
                 conn=conn,
                 state=state,
                 raw_query=query_text,
@@ -366,13 +385,7 @@ async def search_products(
         latency = int((time.time() - start_time) * 1000)
         query_id = None
 
-    # 8. Update in-memory session tracking
-    SESSION_STATES[sid] = state
-    SESSION_PREVIOUS_RESULTS[sid] = [item.article_id for item in all_displayed]
-
     return SearchResponse(
-        session_id=sid,
-        turn_index=state.turn_index,
         total_results=len(reranked_exact) + len(reranked_similar),
         search_state=state,
         items=all_displayed,
@@ -380,74 +393,9 @@ async def search_products(
         exact_items=reranked_exact,
         similar_items=reranked_similar,
         message=message,
+        query_type=active_query_type,
         latency_ms=latency,
         query_id=query_id,
-    )
-
-
-@router.delete("/search/{session_id}/constraint", response_model=SearchResponse)
-async def delete_constraint(
-    session_id: str,
-    chip_id: str = Query(..., description="The chip_id to remove, e.g. 'color:Black'"),
-) -> SearchResponse:
-    """Removes an active constraint chip and re-evaluates ranking immediately."""
-    if session_id not in SESSION_STATES:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session '{session_id}' not found.",
-        )
-
-    start_time = time.time()
-    state = SESSION_STATES[session_id]
-    state = StateManager.remove_constraint(state, chip_id)
-
-    query_vector = SESSION_QUERY_VECTORS.get(session_id)
-    query_type = SESSION_QUERY_TYPES.get(session_id, "text")
-
-    # Re-query partitioned candidates
-    exact_candidates: List[SearchResultItem] = []
-    similar_candidates: List[SearchResultItem] = []
-
-    try:
-        with get_db_connection() as conn:
-            exact_candidates, similar_candidates = CandidateRetriever.retrieve_partitioned(
-                conn=conn,
-                state=state,
-                query_vector=query_vector,
-                query_type=query_type,
-                limit=50,
-            )
-            reranked_exact = SoftReranker.rerank(exact_candidates, state)
-            reranked_similar = SoftReranker.rerank(similar_candidates, state)
-    except Exception as e:
-        logger.warning("DB query during constraint removal failed (%s), using sample dataset fallback.", e)
-        exact_candidates, similar_candidates = CandidateRetriever.retrieve_from_csv_partitioned(
-            state=state, limit=50
-        )
-        reranked_exact = SoftReranker.rerank(exact_candidates, state)
-        reranked_similar = SoftReranker.rerank(similar_candidates, state)
-
-    has_exact_match = len(reranked_exact) > 0
-    message = None
-    if not has_exact_match:
-        message = "Không tìm thấy sản phẩm khớp chính xác với tiêu chí của bạn. Dưới đây là các sản phẩm tương tự."
-    all_displayed = reranked_exact if has_exact_match else reranked_similar
-
-    SESSION_STATES[session_id] = state
-    SESSION_PREVIOUS_RESULTS[session_id] = [item.article_id for item in all_displayed]
-    latency = int((time.time() - start_time) * 1000)
-
-    return SearchResponse(
-        session_id=session_id,
-        turn_index=state.turn_index,
-        total_results=len(reranked_exact) + len(reranked_similar),
-        search_state=state,
-        items=all_displayed,
-        has_exact_match=has_exact_match,
-        exact_items=reranked_exact,
-        similar_items=reranked_similar,
-        message=message,
-        latency_ms=latency,
     )
 
 

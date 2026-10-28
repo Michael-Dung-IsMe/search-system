@@ -20,6 +20,47 @@ from backend.schemas.state import QueryIntent
 load_dotenv()
 logger = logging.getLogger("intent_extractor")
 
+
+CATEGORY_EMBEDDING_TERMS = {
+    "Pants": "pants trousers shorts",
+    "Shoes": "shoes footwear",
+    "Garment Upper body": "clothing top shirt",
+    "Garment Lower body": "trousers shorts skirt",
+    "Garment Full body": "dress jumpsuit playsuit",
+}
+
+
+def build_canonical_query(intent: QueryIntent) -> str:
+    """Build stable catalog-language text from an extracted intent.
+
+    Price, gender, and exclusions stay out of the embedding because the
+    retriever applies them as relational constraints.
+    """
+    parts: list[str] = []
+
+    if intent.category:
+        parts.append(
+            CATEGORY_EMBEDDING_TERMS.get(
+                intent.category,
+                intent.category.lower(),
+            )
+        )
+
+    if intent.color:
+        parts.append(intent.color.lower())
+
+    if intent.material:
+        material = EntityNormalizer.normalize_material(intent.material) or intent.material
+        parts.append(material.lower())
+
+    if intent.style:
+        parts.append(intent.style.strip().lower())
+
+    if intent.purpose:
+        parts.append(intent.purpose.strip().lower())
+
+    return ", ".join(dict.fromkeys(part for part in parts if part))
+
 SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên gia trích xuất ý định tìm kiếm thời trang đa phương thức.
 Nhiệm vụ của bạn:
 1. Sửa lỗi phát âm, phương ngữ 3 miền Bắc/Trung/Nam (ví dụ: 'dày da' -> 'giày da', 'bận' -> 'mặc', 'chiệu/chẹo' -> 'triệu').
@@ -34,7 +75,6 @@ Nhiệm vụ của bạn:
    - purpose: mục đích (đi tiệc, đi làm, chạy bộ...).
    - exclude_colors: danh sách màu NGƯỜI DÙNG KHÔNG MUỐN (ví dụ: 'không màu đen' -> ['09' hoặc 'Black']).
    - exclude_materials: danh sách chất liệu NGƯỜI DÙNG KHÔNG MUỐN (ví dụ: 'không phải da' -> ['leather']).
-   - reference_ordinal: số thứ tự sản phẩm tham chiếu (ví dụ: 'giống số 1' -> 1, 'đôi thứ 2' -> 2).
 
 Quy tắc bắt buộc:
 - "Xin chào", "bạn có khỏe không?", "cảm ơn", trò chuyện xã giao và câu hỏi không yêu cầu sản phẩm phải có intent_type "conversation".
@@ -132,9 +172,11 @@ class IntentExtractor:
         explicit_color = EntityNormalizer.extract_color(normalized_text)
         if explicit_color:
             intent.color = explicit_color[1]
-        elif intent.color:
-            normalized_color = EntityNormalizer.extract_color(intent.color)
-            intent.color = normalized_color[1] if normalized_color else None
+        else:
+            # Color is a hard retrieval constraint. Do not retain a provider
+            # guess unless a supported color is explicit in the user text
+            # (for example, Vietnamese currency "đồng" is not a color).
+            intent.color = None
 
         if original_category != intent.category:
             logger.info(
@@ -156,7 +198,6 @@ class IntentExtractor:
             intent.purpose,
             intent.exclude_colors,
             intent.exclude_materials,
-            intent.reference_ordinal is not None,
         ]):
             intent.intent_type = "product_search"
         return intent
@@ -212,7 +253,7 @@ class IntentExtractor:
             model_name="gemini-1.5-flash",
             generation_config={"response_mime_type": "application/json"},
         )
-        prompt = f"{SYSTEM_PROMPT}\n\nTruy vấn của người dùng: {normalized_text}\nTrả về JSON với các trường: intent_type, category, gender, color, min_price, max_price, material, style, purpose, exclude_colors, exclude_materials, reference_ordinal."
+        prompt = f"{SYSTEM_PROMPT}\n\nTruy vấn của người dùng: {normalized_text}\nTrả về JSON với các trường: intent_type, category, gender, color, min_price, max_price, material, style, purpose, exclude_colors, exclude_materials."
         response = model.generate_content(prompt)
         data = json.loads(response.text)
 
@@ -247,7 +288,6 @@ class IntentExtractor:
             purpose=data.get("purpose"),
             exclude_colors=data.get("exclude_colors", []),
             exclude_materials=data.get("exclude_materials", []),
-            reference_ordinal=data.get("reference_ordinal"),
         )
         return intent
 
@@ -303,11 +343,6 @@ class IntentExtractor:
         elif any(w in text for w in ["nữ", "phụ nữ", "gái", "girl", "ladies"]):
             intent.gender = "Ladieswear"
 
-        # Reference ordinal check: 'giống số 1', 'thứ 2'
-        ref_match = re.search(r"(?:giống|như|chiếc|đôi|cái|mẫu)\s+(?:số|thứ)?\s*(\d+)", text)
-        if ref_match:
-            intent.reference_ordinal = int(ref_match.group(1))
-
         has_structured_constraint = any([
             intent.category,
             intent.gender,
@@ -317,7 +352,6 @@ class IntentExtractor:
             intent.material,
             intent.exclude_colors,
             intent.exclude_materials,
-            intent.reference_ordinal is not None,
         ])
         search_words = ("tìm", "mua", "gợi ý", "đề xuất", "sản phẩm", "giống", "lọc")
         intent.intent_type = (

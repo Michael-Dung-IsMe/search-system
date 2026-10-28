@@ -2,11 +2,6 @@
 
 import React from 'react';
 
-interface HeaderProps {
-  statusText?: string;
-  isOnline?: boolean;
-}
-
 export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200">
@@ -14,7 +9,7 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-3">
           <a href="/" className="flex items-center gap-2 group">
             <span className="text-xl font-extrabold tracking-widest uppercase text-gray-900 font-sans group-hover:text-gray-700 transition-colors">
-              ATELIER
+              MIXI
             </span>
             <span className="text-[10px] font-bold tracking-wider uppercase bg-gray-900 text-white px-2 py-0.5 rounded-full">
               SEARCH

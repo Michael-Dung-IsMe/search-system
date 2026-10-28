@@ -4,8 +4,8 @@ Verifies:
 1. System endpoints (Health check, Static file mounts, Structured error handlers).
 2. /api/detect (Valid image upload, normalized boxes, MD5 caching, empty/invalid file rejection).
 3. /api/transcribe (Audio upload, speech-to-text transcript, empty file handling).
-4. /api/search Lifecycle (Text search, Image search, Crop-box integration, Multi-turn session).
-5. /api/search/{session_id}/constraint (Interactive chip removal, 404 handling).
+4. /api/search lifecycle (text, image, crop-box, and request independence).
+5. Independent request behavior without server-side session state.
 6. /api/products/{id} (Product detail lookup, 404 handling).
 7. Detector and Embedder helpers (Bounding box cropping, Unit normalization).
 """
@@ -174,10 +174,10 @@ class TestTranscribeEndpoint:
         assert "unsupported audio type" in response.json()["message"].lower()
 
 
-class TestSearchLifecycleAndConstraints:
-    """Verifies end-to-end multi-turn search sessions, crop boxes, and chip removal."""
+class TestIndependentSearchLifecycle:
+    """Verifies independent text, image, and reference searches."""
 
-    def test_search_turn1_text_only(self, client, mock_db):
+    def test_text_search_is_self_contained(self, client, mock_db):
         mock_conn, mock_cur = mock_db
         mock_cur.fetchall.return_value = [
             (
@@ -195,14 +195,69 @@ class TestSearchLifecycleAndConstraints:
             assert response.status_code == 200
             data = response.json()
 
-            assert "session_id" in data
-            assert data["turn_index"] == 1
+            assert "session_id" not in data
+            assert "turn_index" not in data
             assert data["total_results"] == 1
-            assert len(data["search_state"]["active_chips"]) >= 2
+            assert data["search_state"]["category"] == "T-shirt"
+            assert data["search_state"]["color"] == "White"
+            assert data["search_state"]["max_price"] == 500_000
             assert data["items"][0]["article_id"] == "0123456789"
 
-    def test_search_turn2_with_image_and_crop(self, client, sample_image_bytes, mock_db):
-        sid = "test_session_turn2"
+    def test_text_search_retries_with_canonical_query_only_after_raw_is_empty(
+        self, client, mock_db
+    ):
+        mock_conn, _ = mock_db
+        intent = QueryIntent(
+            raw_query="Tìm cho tôi quần màu hồng",
+            normalized_query="Tìm cho tôi quần màu hồng",
+            intent_type="product_search",
+            category="Pants",
+            color="Pink",
+        )
+        canonical_item = SearchResultItem(
+            article_id="0123456789",
+            prod_name="Pink Shorts",
+            price_vnd=499000,
+            gender="Ladieswear",
+            color_code="51",
+            color_name="Light Pink",
+            category_group="Garment Lower body",
+            category_sub="Shorts",
+            image_path="images/0123456789.jpg",
+            detail_desc="Pink shorts",
+            visual_similarity=0.72,
+            final_score=0.72,
+            match_type="similar",
+        )
+        mock_embedder = MagicMock()
+        raw_vector = np.full(768, 0.01, dtype=np.float32)
+        canonical_vector = np.full(768, 0.02, dtype=np.float32)
+        mock_embedder.encode_text.side_effect = [raw_vector, canonical_vector]
+
+        with (
+            patch("backend.routes.search_routes.get_db_connection", return_value=mock_conn),
+            patch("backend.routes.search_routes.IntentExtractor.extract", return_value=intent),
+            patch(
+                "backend.routes.search_routes.MultimodalEmbedder.get_instance",
+                return_value=mock_embedder,
+            ),
+            patch(
+                "backend.routes.search_routes.CandidateRetriever.retrieve_partitioned",
+                side_effect=[([], []), ([], [canonical_item])],
+            ) as retrieve_mock,
+        ):
+            response = client.post(
+                "/api/search",
+                data={"query_text": "Tìm cho tôi quần màu hồng"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["article_id"] == "0123456789"
+        assert mock_embedder.encode_text.call_args_list[0].args[0] == intent.normalized_query
+        assert mock_embedder.encode_text.call_args_list[1].args[0] == "pants trousers shorts, pink"
+        assert retrieve_mock.call_count == 2
+
+    def test_image_and_crop_search(self, client, sample_image_bytes, mock_db):
         crop_box_json = json.dumps([0.1, 0.2, 0.8, 0.9])
 
         mock_conn, mock_cur = mock_db
@@ -218,7 +273,6 @@ class TestSearchLifecycleAndConstraints:
             response = client.post(
                 "/api/search",
                 data={
-                    "session_id": sid,
                     "query_text": "tìm đôi giày sneaker giống vùng này",
                     "crop_box": crop_box_json,
                 },
@@ -226,8 +280,8 @@ class TestSearchLifecycleAndConstraints:
             )
             assert response.status_code == 200
             data = response.json()
-            assert data["session_id"] == sid
-            assert data["turn_index"] == 1
+            assert "session_id" not in data
+            assert data["query_type"] == "image"
             assert data["total_results"] == 1
 
     def test_multimodal_generic_text_uses_image_category(
@@ -254,7 +308,6 @@ class TestSearchLifecycleAndConstraints:
             response = client.post(
                 "/api/search",
                 data={
-                    "session_id": "generic-image-category",
                     "query_text": "quần này màu hồng dưới 1 triệu",
                 },
                 files={"image": ("shorts.jpg", sample_image_bytes, "image/jpeg")},
@@ -289,7 +342,6 @@ class TestSearchLifecycleAndConstraints:
             response = client.post(
                 "/api/search",
                 data={
-                    "session_id": "explicit-text-category",
                     "query_text": "quần đùi ngắn giống chiếc này, màu hồng, dưới 1 triệu",
                 },
                 files={"image": ("trousers.jpg", sample_image_bytes, "image/jpeg")},
@@ -330,8 +382,7 @@ class TestSearchLifecycleAndConstraints:
         assert "trợ lý tìm kiếm thời trang" in data["message"].lower()
         retrieve_mock.assert_not_called()
 
-    def test_search_turn3_reference_article(self, client, mock_db):
-        sid = "test_session_turn3"
+    def test_reference_article_search(self, client, mock_db):
         mock_conn, mock_cur = mock_db
         mock_cur.fetchone.return_value = ([0.01] * 768,)
         mock_cur.fetchall.return_value = []
@@ -340,7 +391,6 @@ class TestSearchLifecycleAndConstraints:
             response = client.post(
                 "/api/search",
                 data={
-                    "session_id": sid,
                     "reference_article_id": "0123456789",
                     "query_text": "nhưng không phải da",
                 },
@@ -350,35 +400,30 @@ class TestSearchLifecycleAndConstraints:
             assert data["search_state"]["reference_article_id"] == "0123456789"
             assert "leather" in data["search_state"]["exclude_materials"]
 
-    def test_delete_constraint_chip_success(self, client, mock_db):
-        from backend.core.state_manager import StateManager
-        from backend.routes.search_routes import SESSION_STATES
-        from backend.schemas.state import SearchState
-
-        sid = "session_for_delete_chip"
-        state = SearchState(session_id=sid, color="White", max_price=500000)
-        state.active_chips = StateManager.generate_chips(state)
-        SESSION_STATES[sid] = state
-
+    def test_later_request_does_not_inherit_previous_constraints(self, client, mock_db):
         mock_conn, mock_cur = mock_db
         mock_cur.fetchall.return_value = []
+        intents = [
+            QueryIntent(category="T-shirt", color="White", max_price=500_000),
+            QueryIntent(category="Trousers", color="Black"),
+        ]
 
-        with patch("backend.routes.search_routes.get_db_connection", return_value=mock_conn):
-            response = client.delete(
-                f"/api/search/{sid}/constraint",
-                params={"chip_id": "color:White"},
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["search_state"]["color"] is None
+        with (
+            patch("backend.routes.search_routes.get_db_connection", return_value=mock_conn),
+            patch(
+                "backend.routes.search_routes.IntentExtractor.extract",
+                side_effect=intents,
+            ),
+        ):
+            first = client.post("/api/search", data={"query_text": "áo trắng dưới 500k"})
+            second = client.post("/api/search", data={"query_text": "quần đen"})
 
-    def test_delete_constraint_unknown_session(self, client):
-        response = client.delete(
-            "/api/search/unknown_session_uuid/constraint",
-            params={"chip_id": "color:White"},
-        )
-        assert response.status_code == 404
-        assert "not found" in response.json()["message"].lower()
+        assert first.status_code == 200
+        assert second.status_code == 200
+        second_state = second.json()["search_state"]
+        assert second_state["category"] == "Trousers"
+        assert second_state["color"] == "Black"
+        assert second_state["max_price"] is None
 
 
     def test_search_corrupt_image_upload(self, client):
@@ -579,17 +624,4 @@ class TestPhase3MultimodalLogicEndpoints:
         assert isinstance(data["exact_items"], list)
         assert isinstance(data["similar_items"], list)
         assert isinstance(data["has_exact_match"], bool)
-
-    def test_constraint_deletion_preserves_partitions(self, client):
-        # Initial search to establish session
-        resp1 = client.post("/api/search", data={"query_text": "quần đen"})
-        session_id = resp1.json()["session_id"]
-
-        # Delete constraint
-        resp2 = client.delete(f"/api/search/{session_id}/constraint?chip_id=color:Black")
-        assert resp2.status_code == 200
-        data2 = resp2.json()
-        assert "has_exact_match" in data2
-        assert "exact_items" in data2
-        assert "similar_items" in data2
 

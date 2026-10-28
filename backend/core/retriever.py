@@ -17,6 +17,13 @@ from backend.schemas.state import SearchResultItem, SearchState
 
 logger = logging.getLogger("retriever")
 
+CATALOG_GROUP_CATEGORIES = {
+    "Garment Upper body",
+    "Garment Lower body",
+    "Garment Full body",
+    "Shoes",
+}
+
 
 class CandidateRetriever:
     """Retrieves top candidate products from PostgreSQL + pgvector based on SearchState."""
@@ -112,9 +119,14 @@ class CandidateRetriever:
             )
             params["pants_trousers"] = "Trousers"
             params["pants_shorts"] = "Shorts"
+        elif state.category in CATALOG_GROUP_CATEGORIES:
+            where_clauses.append("c.group_name = %(category)s")
+            params["category"] = state.category
         elif state.category:
-            where_clauses.append("(c.sub_category ILIKE %(category)s OR c.group_name ILIKE %(category)s)")
-            params["category"] = f"%{state.category}%"
+            # Catalog categories are canonical values. Exact comparison keeps
+            # Shirt separate from T-shirt and Polo shirt.
+            where_clauses.append("c.sub_category = %(category)s")
+            params["category"] = state.category
 
         # 4. Color positive constraint (P1 - Strict or Relaxed Family)
         if relaxed_colors:
@@ -350,9 +362,11 @@ class CandidateRetriever:
                     if state.category == "Pants":
                         if category_sub not in {"Trousers", "Shorts"}:
                             continue
+                    elif state.category in CATALOG_GROUP_CATEGORIES:
+                        if category_group != state.category:
+                            continue
                     else:
-                        cat_lower = state.category.lower()
-                        if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
+                        if category_sub != state.category:
                             continue
                 # 4. Color filter
                 if state.color:
@@ -412,9 +426,11 @@ class CandidateRetriever:
                     if state.category == "Pants":
                         if category_sub not in {"Trousers", "Shorts"}:
                             continue
+                    elif state.category in CATALOG_GROUP_CATEGORIES:
+                        if category_group != state.category:
+                            continue
                     else:
-                        cat_lower = state.category.lower()
-                        if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
+                        if category_sub != state.category:
                             continue
 
                 # Check color family or general category match

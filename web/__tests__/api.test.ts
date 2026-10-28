@@ -1,7 +1,6 @@
 import {
   API_BASE_URL,
   ApiError,
-  deleteConstraint,
   detectObjects,
   getProductDetail,
   getProductImageUrl,
@@ -92,15 +91,10 @@ describe('API Client Library (web/src/lib/api.ts)', () => {
 
   test('searchProducts calls POST /api/search with all query parameters', async () => {
     const mockSearchResponse = {
-      session_id: 'sess-123',
-      turn_index: 1,
       total_results: 5,
       search_state: {
-        session_id: 'sess-123',
-        turn_index: 1,
         exclude_colors: [],
         exclude_materials: [],
-        active_chips: [],
       },
       items: [],
       latency_ms: 120,
@@ -114,10 +108,10 @@ describe('API Client Library (web/src/lib/api.ts)', () => {
     const mockFile = new File(['img'], 'crop.jpg', { type: 'image/jpeg' });
     const res = await searchProducts({
       query_text: 'quần bò',
-      session_id: 'sess-123',
       reference_article_id: '0123456789',
       crop_box: '[0, 0, 1, 1]',
       image: mockFile,
+      query_type: 'image',
     });
 
     expect(global.fetch).toHaveBeenCalledWith(
@@ -127,36 +121,11 @@ describe('API Client Library (web/src/lib/api.ts)', () => {
         body: expect.any(FormData),
       })
     );
-    expect(res.session_id).toBe('sess-123');
-  });
+    expect(res.total_results).toBe(5);
 
-  test('deleteConstraint calls DELETE /api/search/{session_id}/constraint', async () => {
-    const mockSearchResponse = {
-      session_id: 'sess-123',
-      turn_index: 2,
-      total_results: 3,
-      search_state: {
-        session_id: 'sess-123',
-        turn_index: 2,
-        exclude_colors: [],
-        exclude_materials: [],
-        active_chips: [],
-      },
-      items: [],
-      latency_ms: 80,
-    };
-
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockSearchResponse,
-    });
-
-    const res = await deleteConstraint('sess-123', 'color:White');
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/search/sess-123/constraint?chip_id=color%3AWhite'),
-      expect.objectContaining({ method: 'DELETE' })
-    );
-    expect(res.turn_index).toBe(2);
+    const formData = (global.fetch as jest.Mock).mock.calls[0][1].body as FormData;
+    expect(formData.get('query_type')).toBe('image');
+    expect(formData.get('session_id')).toBeNull();
   });
 
   test('getProductDetail calls GET /api/products/{id}', async () => {

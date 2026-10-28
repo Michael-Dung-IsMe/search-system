@@ -9,12 +9,14 @@ interface ProductCardProps {
   item: SearchResultItem;
   onFindSimilar: (articleId: string, prodName: string) => void;
   onClick?: (item: SearchResultItem) => void;
+  showImageSimilarity?: boolean;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
   item,
   onFindSimilar,
   onClick,
+  showImageSimilarity = false,
 }) => {
   const [imgError, setImgError] = useState(false);
   const imageUrl = imgError
@@ -45,7 +47,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         />
 
         {/* Visual Similarity Match Badge */}
-        {item.visual_similarity && item.visual_similarity > 0.5 && (
+        {showImageSimilarity && item.visual_similarity > 0.5 && (
           <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-xs text-[10px] font-bold text-gray-800 shadow-xs border border-gray-200">
             {Math.round(item.visual_similarity * 100)}% khớp ảnh
           </div>
