@@ -66,6 +66,7 @@ export interface SearchResponse {
   exact_items: SearchResultItem[];
   similar_items: SearchResultItem[];
   message?: string | null;
+  response_type?: 'search_results' | 'conversation';
   latency_ms: number;
   query_id?: string;
 }

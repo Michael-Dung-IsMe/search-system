@@ -3,7 +3,7 @@
 import React from 'react';
 import { SearchResultItem } from '@/types/search';
 import { ProductCard } from './ProductCard';
-import { Shirt } from 'lucide-react';
+import { Bot, Shirt } from 'lucide-react';
 
 interface ProductGridProps {
   items: SearchResultItem[];
@@ -11,6 +11,7 @@ interface ProductGridProps {
   similarItems?: SearchResultItem[];
   hasExactMatch?: boolean;
   message?: string | null;
+  responseType?: 'search_results' | 'conversation';
   isLoading?: boolean;
   onFindSimilar: (articleId: string, prodName: string) => void;
   onProductClick?: (item: SearchResultItem) => void;
@@ -22,6 +23,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
   similarItems = [],
   hasExactMatch = true,
   message,
+  responseType = 'search_results',
   isLoading = false,
   onFindSimilar,
   onProductClick,
@@ -37,6 +39,22 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
             <div className="h-4 bg-gray-200 rounded w-1/3" />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (responseType === 'conversation') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center px-4 animate-fade-in">
+        <div className="w-16 h-16 rounded-3xl bg-indigo-50 flex items-center justify-center text-indigo-600 mb-4 shadow-xs">
+          <Bot size={28} />
+        </div>
+        <h3 className="text-base font-bold text-gray-900 mb-1">
+          Trợ lý tìm kiếm thời trang
+        </h3>
+        <p className="text-xs sm:text-sm text-gray-500 max-w-md">
+          {message || 'Hãy mô tả sản phẩm thời trang mà bạn muốn tìm.'}
+        </p>
       </div>
     );
   }

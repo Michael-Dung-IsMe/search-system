@@ -8,7 +8,7 @@ describe('ImageAnalysisBar Component', () => {
   const mockBoxes: DetectedBox[] = [
     {
       box_id: 'box_1',
-      label: 'Jacket',
+      label: 'UpperGarment',
       score: 0.94,
       box_2d: [0.1, 0.1, 0.6, 0.8],
     },
@@ -66,14 +66,14 @@ describe('ImageAnalysisBar Component', () => {
       />
     );
 
-    expect(screen.getByText('Áo khoác')).toBeInTheDocument();
+    expect(screen.getByText('Áo')).toBeInTheDocument();
     expect(screen.getByText('94%')).toBeInTheDocument();
-    expect(screen.getByText('Quần dài')).toBeInTheDocument();
+    expect(screen.getByText('Quần')).toBeInTheDocument();
     expect(screen.getByText('88%')).toBeInTheDocument();
     expect(screen.getByText('Toàn bộ ảnh')).toBeInTheDocument();
 
     // Click Pants chip
-    fireEvent.click(screen.getByText('Quần dài'));
+    fireEvent.click(screen.getByText('Quần'));
     expect(onSelectBox).toHaveBeenCalledWith(mockBoxes[1]);
 
     // Click Toàn bộ ảnh
@@ -98,5 +98,22 @@ describe('ImageAnalysisBar Component', () => {
     const clearBtn = screen.getByText('Hủy ảnh');
     fireEvent.click(clearBtn);
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not present a low-confidence label as certain', () => {
+    render(
+      <ImageAnalysisBar
+        imageFile={dummyFile}
+        boxes={[{ box_id: 'uncertain', label: 'Top', score: 0.25, box_2d: [0.1, 0.1, 0.9, 0.9] }]}
+        isAnalyzing={false}
+        selectedBoxId={null}
+        onSelectBox={jest.fn()}
+        onOpenModal={jest.fn()}
+        onClearImage={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Chưa xác định')).toBeInTheDocument();
+    expect(screen.getByText('25%')).toBeInTheDocument();
   });
 });

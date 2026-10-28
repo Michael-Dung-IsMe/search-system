@@ -23,6 +23,10 @@ class QueryIntent(BaseModel):
     """Structured intent extracted by LLM (OpenAI/Gemini) with Dialect Normalizer."""
     raw_query: str = Field("", description="Raw input text or speech transcript")
     normalized_query: str = Field("", description="Cleaned dialect-normalized text")
+    intent_type: Literal["product_search", "conversation"] = Field(
+        "product_search",
+        description="Whether the user wants fashion products or is only chatting",
+    )
     category: Optional[str] = Field(None, description="Target product category, e.g., 'T-shirt', 'Shoes'")
     gender: Optional[Literal["Ladieswear", "Menswear", "Unisex"]] = Field(None, description="Target gender")
     color: Optional[str] = Field(None, description="Preferred color name or code")
@@ -86,3 +90,4 @@ class SearchResponse(BaseModel):
     exact_items: List[SearchResultItem] = Field(default_factory=list)
     similar_items: List[SearchResultItem] = Field(default_factory=list)
     message: Optional[str] = None
+    response_type: Literal["search_results", "conversation"] = "search_results"

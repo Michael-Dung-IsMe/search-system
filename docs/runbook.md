@@ -125,10 +125,10 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=fashion_search
 
 # Khóa API AI (Tùy chọn):
-# OPENAI_API_KEY dùng cho: Intent Extraction (gpt-4o-mini), Speech-to-Text (Whisper),
+# OPENAI_API_KEY dùng cho: Intent Extraction (gpt-4o-mini), Speech-to-Text (gpt-transcribe),
 # và Text Embedding (text-embedding-3-small, dimensions=768).
-# Nếu không điền, hệ thống tự động kích hoạt SigLIP Text Encoder nội bộ, Rule-based Extractor
-# và Mock Transcriber, đảm bảo toàn bộ luồng tìm kiếm và test case vẫn hoạt động 100% trơn tru.
+# Nếu không điền, text embedding và intent extraction vẫn có fallback cục bộ;
+# endpoint Speech-to-Text sẽ báo lỗi cấu hình thay vì trả về một transcript giả.
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 

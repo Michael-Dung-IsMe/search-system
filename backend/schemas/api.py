@@ -11,7 +11,7 @@ from backend.schemas.state import ConstraintChip, SearchResponse, SearchResultIt
 class DetectedBox(BaseModel):
     """Normalized bounding box detected by OWL-ViT."""
     box_id: str = Field(..., description="Unique box ID")
-    label: str = Field(..., description="Canonical garment label (e.g., Top, Pants, Shoes, Bag, Dress)")
+    label: str = Field(..., description="Coarse garment-region label, e.g. UpperGarment, Pants, Skirt, Dress, Shoes")
     score: float = Field(..., ge=0.0, le=1.0, description="Detection confidence score")
     box_2d: List[float] = Field(..., min_length=4, max_length=4, description="[ymin, xmin, ymax, xmax] normalized to [0.0, 1.0]")
     polygon: Optional[List[List[float]]] = Field(

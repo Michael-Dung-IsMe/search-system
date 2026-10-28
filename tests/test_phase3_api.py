@@ -26,7 +26,7 @@ from backend.core.detector import ObjectDetector
 from backend.core.embedder import MultimodalEmbedder
 from backend.core.transcriber import SpeechTranscriber
 from backend.main import app
-from backend.schemas.state import SearchResultItem
+from backend.schemas.state import QueryIntent, SearchResultItem
 
 
 @pytest.fixture(scope="module")
@@ -165,6 +165,14 @@ class TestTranscribeEndpoint:
         assert response.status_code == 400
         assert "empty" in response.json()["message"].lower()
 
+    def test_transcribe_rejects_unsupported_file_type(self, client):
+        response = client.post(
+            "/api/transcribe",
+            files={"file": ("voice.txt", b"not-audio", "text/plain")},
+        )
+        assert response.status_code == 400
+        assert "unsupported audio type" in response.json()["message"].lower()
+
 
 class TestSearchLifecycleAndConstraints:
     """Verifies end-to-end multi-turn search sessions, crop boxes, and chip removal."""
@@ -221,6 +229,106 @@ class TestSearchLifecycleAndConstraints:
             assert data["session_id"] == sid
             assert data["turn_index"] == 1
             assert data["total_results"] == 1
+
+    def test_multimodal_generic_text_uses_image_category(
+        self, client, sample_image_bytes, mock_db
+    ):
+        mock_conn, mock_cur = mock_db
+        mock_cur.fetchall.return_value = []
+        llm_intent = QueryIntent(
+            raw_query="quần này màu hồng dưới 1 triệu",
+            normalized_query="quần này màu hồng dưới 1 triệu",
+            category="Trousers",  # Deliberate LLM guess; route must ignore it.
+            color="Pink",
+            max_price=1_000_000,
+        )
+
+        with (
+            patch("backend.routes.search_routes.get_db_connection", return_value=mock_conn),
+            patch("backend.routes.search_routes.IntentExtractor.extract", return_value=llm_intent),
+            patch(
+                "backend.routes.search_routes.CandidateRetriever.infer_category_from_image",
+                return_value=("Shorts", 0.8),
+            ),
+        ):
+            response = client.post(
+                "/api/search",
+                data={
+                    "session_id": "generic-image-category",
+                    "query_text": "quần này màu hồng dưới 1 triệu",
+                },
+                files={"image": ("shorts.jpg", sample_image_bytes, "image/jpeg")},
+            )
+
+        assert response.status_code == 200
+        state = response.json()["search_state"]
+        assert state["category"] == "Shorts"
+        assert state["color"] == "Pink"
+        assert state["max_price"] == 1_000_000
+
+    def test_multimodal_specific_text_overrides_image_category(
+        self, client, sample_image_bytes, mock_db
+    ):
+        mock_conn, mock_cur = mock_db
+        mock_cur.fetchall.return_value = []
+        llm_intent = QueryIntent(
+            raw_query="quần đùi ngắn giống chiếc này, màu hồng, dưới 1 triệu",
+            normalized_query="quần đùi ngắn giống chiếc này, màu hồng, dưới 1 triệu",
+            category="Trousers",  # Deliberately wrong to verify deterministic override.
+            color="Pink",
+            max_price=1_000_000,
+        )
+
+        with (
+            patch("backend.routes.search_routes.get_db_connection", return_value=mock_conn),
+            patch("backend.routes.search_routes.IntentExtractor.extract", return_value=llm_intent),
+            patch(
+                "backend.routes.search_routes.CandidateRetriever.infer_category_from_image"
+            ) as infer_mock,
+        ):
+            response = client.post(
+                "/api/search",
+                data={
+                    "session_id": "explicit-text-category",
+                    "query_text": "quần đùi ngắn giống chiếc này, màu hồng, dưới 1 triệu",
+                },
+                files={"image": ("trousers.jpg", sample_image_bytes, "image/jpeg")},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["search_state"]["category"] == "Shorts"
+        infer_mock.assert_not_called()
+
+    def test_conversation_query_skips_product_retrieval(self, client):
+        conversation_intent = QueryIntent(
+            raw_query="Xin chào, bạn có khỏe không?",
+            normalized_query="Xin chào, bạn có khỏe không?",
+            intent_type="conversation",
+        )
+
+        with (
+            patch(
+                "backend.routes.search_routes.IntentExtractor.extract",
+                return_value=conversation_intent,
+            ),
+            patch(
+                "backend.routes.search_routes.CandidateRetriever.retrieve_partitioned"
+            ) as retrieve_mock,
+        ):
+            response = client.post(
+                "/api/search",
+                data={"query_text": "Xin chào, bạn có khỏe không?"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["response_type"] == "conversation"
+        assert data["total_results"] == 0
+        assert data["items"] == []
+        assert data["exact_items"] == []
+        assert data["similar_items"] == []
+        assert "trợ lý tìm kiếm thời trang" in data["message"].lower()
+        retrieve_mock.assert_not_called()
 
     def test_search_turn3_reference_article(self, client, mock_db):
         sid = "test_session_turn3"
@@ -305,7 +413,7 @@ class TestProductDetailEndpoint:
         mock_conn, mock_cur = mock_db
         mock_cur.fetchone.return_value = (
             "0123456789", "P001", "Slim Fit Denim Jeans", 799000, "Menswear",
-            "14", "Dark Blue", "Garment Lower body", "Trousers",
+            "73", "Dark Blue", "Garment Lower body", "Trousers",
             "100% cotton denim fabric", "images/0123456789.jpg"
         )
 
@@ -393,7 +501,22 @@ class TestTranscriberUnitMethods:
         transcriber = SpeechTranscriber(openai_api_key="mock_key", use_mock=False)
         result = transcriber.transcribe(b"fake_audio_bytes", filename="audio.webm")
         assert result == "tìm áo blazer màu be"
-        assert mock_client.audio.transcriptions.create.called
+        call = mock_client.audio.transcriptions.create.call_args
+        assert call.kwargs["model"] == "gpt-transcribe"
+        assert call.kwargs["languages"] == ["vi"]
+        assert "language" not in call.kwargs
+        assert "keywords" not in call.kwargs
+        assert "prompt" not in call.kwargs
+
+    @patch("openai.OpenAI")
+    def test_openai_failure_does_not_return_mock_transcript(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.audio.transcriptions.create.side_effect = RuntimeError("API unavailable")
+
+        transcriber = SpeechTranscriber(openai_api_key="mock_key", use_mock=False)
+        with pytest.raises(RuntimeError, match="OpenAI speech transcription failed"):
+            transcriber.transcribe(b"fake_audio_bytes", filename="audio.webm")
 
     def test_transcribe_file_path_input(self, tmp_path):
         audio_file = tmp_path / "voice_sample.webm"

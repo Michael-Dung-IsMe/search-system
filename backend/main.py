@@ -8,6 +8,7 @@ from __future__ import annotations
 # Hot reload trigger for environment and database configuration
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -69,7 +70,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # 3. Mount Static Product & Upload Images
-data_images_dir = Path("data/images")
+data_images_dir = Path(os.getenv("DATA_IMAGES_DIR", "data/images"))
 data_images_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=str(data_images_dir)), name="images")
 

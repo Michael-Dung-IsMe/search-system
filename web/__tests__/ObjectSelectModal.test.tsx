@@ -13,7 +13,7 @@ const mockBoxes: DetectedBox[] = [
   {
     box_id: 'box_pants',
     label: 'Quần bò',
-    score: 0.3,
+    score: 0.4,
     box_2d: [0.5, 0.25, 0.85, 0.65],
   },
   {
@@ -64,7 +64,7 @@ describe('ObjectSelectModal Component', () => {
 
     expect(screen.getByText('Phân tích Trang phục từ Ảnh')).toBeInTheDocument();
     expect(screen.getByText('60% Tự tin')).toBeInTheDocument();
-    expect(screen.getByText('30% Tự tin')).toBeInTheDocument();
+    expect(screen.getByText('40% Tự tin')).toBeInTheDocument();
     expect(screen.getByText('10% Tự tin')).toBeInTheDocument();
   });
 
@@ -101,5 +101,26 @@ describe('ObjectSelectModal Component', () => {
       imageFile: dummyFile,
     });
     expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not auto-select a low-confidence detection', () => {
+    const handleConfirm = jest.fn();
+    render(
+      <ObjectSelectModal
+        isOpen={true}
+        onClose={jest.fn()}
+        imageFile={dummyFile}
+        boxes={[mockBoxes[2]]}
+        onConfirm={handleConfirm}
+      />
+    );
+
+    expect(screen.getAllByText(/Chưa xác định/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('Bắt đầu tìm kiếm'));
+    expect(handleConfirm).toHaveBeenCalledWith({
+      selectedBox: null,
+      optionalText: '',
+      imageFile: dummyFile,
+    });
   });
 });

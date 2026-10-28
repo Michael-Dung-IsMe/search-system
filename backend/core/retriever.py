@@ -7,7 +7,7 @@ Executes dynamically constructed SQL queries combining strict relational WHERE c
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import psycopg
@@ -20,6 +20,64 @@ logger = logging.getLogger("retriever")
 
 class CandidateRetriever:
     """Retrieves top candidate products from PostgreSQL + pgvector based on SearchState."""
+
+    @staticmethod
+    def infer_category_from_image(
+        conn: psycopg.Connection,
+        query_vector: np.ndarray,
+        top_k: int = 20,
+        min_confidence: float = 0.55,
+    ) -> Tuple[Optional[str], float]:
+        """Infers the base product category by voting among nearest image neighbors."""
+        sql = """
+            WITH nearest AS (
+                SELECT
+                    c.sub_category,
+                    1 - (p.image_embedding <=> %(query_vec)s::vector) AS similarity
+                FROM product p
+                JOIN category c ON p.category_id = c.id
+                WHERE p.image_embedding IS NOT NULL
+                ORDER BY p.image_embedding <=> %(query_vec)s::vector ASC
+                LIMIT %(top_k)s
+            )
+            SELECT
+                sub_category,
+                COUNT(*)::int AS votes,
+                AVG(similarity)::float AS avg_similarity
+            FROM nearest
+            GROUP BY sub_category
+            ORDER BY votes DESC, avg_similarity DESC;
+        """
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                {"query_vec": query_vector.tolist(), "top_k": top_k},
+            )
+            rows = cur.fetchall()
+
+        if not rows:
+            return None, 0.0
+
+        # Defensive validation also keeps test/mocked product rows from being
+        # mistaken for the aggregate rows returned by this query.
+        valid_rows = [
+            row for row in rows
+            if len(row) >= 3
+            and isinstance(row[0], str)
+            and isinstance(row[1], (int, np.integer))
+            and 0 < int(row[1]) <= top_k
+            and isinstance(row[2], (int, float, np.integer, np.floating))
+            and -1.0 <= float(row[2]) <= 1.0
+        ]
+        if not valid_rows:
+            return None, 0.0
+
+        total_votes = sum(int(row[1]) for row in valid_rows)
+        winner = valid_rows[0]
+        confidence = int(winner[1]) / total_votes if total_votes else 0.0
+        if confidence < min_confidence:
+            return None, round(confidence, 4)
+        return str(winner[0]), round(confidence, 4)
 
     @staticmethod
     def build_sql(
@@ -48,7 +106,13 @@ class CandidateRetriever:
             params["min_price"] = state.min_price
 
         # 3. Category constraint (P0 - Non-negotiable)
-        if state.category:
+        if state.category == "Pants":
+            where_clauses.append(
+                "c.sub_category IN (%(pants_trousers)s, %(pants_shorts)s)"
+            )
+            params["pants_trousers"] = "Trousers"
+            params["pants_shorts"] = "Shorts"
+        elif state.category:
             where_clauses.append("(c.sub_category ILIKE %(category)s OR c.group_name ILIKE %(category)s)")
             params["category"] = f"%{state.category}%"
 
@@ -57,20 +121,31 @@ class CandidateRetriever:
             color_clauses = []
             for idx, c_val in enumerate(relaxed_colors):
                 ckey = f"rel_col_{idx}"
-                color_clauses.append(f"(p.color_code ILIKE %({ckey})s OR p.detail_desc ILIKE %({ckey})s)")
-                params[ckey] = f"%{c_val}%"
+                color_code = EntityNormalizer.get_color_code(c_val)
+                if not color_code:
+                    continue
+                color_clauses.append(f"p.color_code = %({ckey})s")
+                params[ckey] = color_code
             if color_clauses:
                 where_clauses.append("(" + " OR ".join(color_clauses) + ")")
         elif state.color:
-            where_clauses.append("(p.color_code ILIKE %(color)s OR p.detail_desc ILIKE %(color)s)")
-            params["color"] = f"%{state.color}%"
+            color_code = EntityNormalizer.get_color_code(state.color)
+            if color_code:
+                where_clauses.append("p.color_code = %(color_code)s")
+                params["color_code"] = color_code
+            else:
+                # An unknown requested color must not silently return unrelated colors.
+                where_clauses.append("1 = 0")
 
         # 5. Exclude colors negative constraints
         if state.exclude_colors:
             for idx, exc_col in enumerate(state.exclude_colors):
+                exc_code = EntityNormalizer.get_color_code(exc_col)
+                if not exc_code:
+                    continue
                 param_key = f"exc_col_{idx}"
-                where_clauses.append(f"(p.color_code NOT ILIKE %({param_key})s AND p.detail_desc NOT ILIKE %({param_key})s)")
-                params[param_key] = f"%{exc_col}%"
+                where_clauses.append(f"p.color_code <> %({param_key})s")
+                params[param_key] = exc_code
 
         col_target = "p.text_embedding" if query_type in ("text", "voice") else "p.image_embedding"
 
@@ -135,7 +210,7 @@ class CandidateRetriever:
                         price_vnd=int(row[2]),
                         gender=str(row[3]),
                         color_code=str(row[4]),
-                        color_name=str(row[5]),
+                        color_name=EntityNormalizer.get_color_name(str(row[4])),
                         category_group=str(row[6]),
                         category_sub=str(row[7]),
                         image_path=str(row[8]),
@@ -272,16 +347,28 @@ class CandidateRetriever:
                     continue
                 # 3. Category filter
                 if state.category:
-                    cat_lower = state.category.lower()
-                    if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
-                        continue
+                    if state.category == "Pants":
+                        if category_sub not in {"Trousers", "Shorts"}:
+                            continue
+                    else:
+                        cat_lower = state.category.lower()
+                        if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
+                            continue
                 # 4. Color filter
                 if state.color:
-                    if state.color.lower() not in color.lower():
+                    requested_code = EntityNormalizer.get_color_code(state.color)
+                    row_code = str(row.get("colour_group_code", "")).zfill(2)
+                    if not requested_code or row_code != requested_code:
                         continue
                 # 5. Exclude colors
                 if state.exclude_colors:
-                    if any(exc.lower() in color.lower() for exc in state.exclude_colors):
+                    row_code = str(row.get("colour_group_code", "")).zfill(2)
+                    excluded_codes = {
+                        code for code in (
+                            EntityNormalizer.get_color_code(exc) for exc in state.exclude_colors
+                        ) if code
+                    }
+                    if row_code in excluded_codes:
                         continue
 
                 exact_candidates.append(
@@ -317,18 +404,23 @@ class CandidateRetriever:
                 category_sub = row.get("product_type_name", "")
                 category_group = row.get("product_group_name", "")
                 color = row.get("colour_group_name", "White")
+                color_code = str(row.get("colour_group_code", "")).zfill(2)
                 desc = row.get("detail_desc", "")
 
                 # Keep P0 Category invariant
                 if state.category:
-                    cat_lower = state.category.lower()
-                    if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
-                        continue
+                    if state.category == "Pants":
+                        if category_sub not in {"Trousers", "Shorts"}:
+                            continue
+                    else:
+                        cat_lower = state.category.lower()
+                        if cat_lower not in category_sub.lower() and cat_lower not in category_group.lower():
+                            continue
 
                 # Check color family or general category match
                 match = False
                 if color_family:
-                    if any(c_fam.lower() in color.lower() for c_fam in color_family):
+                    if color_code in color_family:
                         match = True
                 else:
                     match = True
